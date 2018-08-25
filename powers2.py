@@ -154,13 +154,24 @@ class DirectionToProjectile(Node):
 	OUTTYPES = [EnemyEntityId]
 	FORMATSTRINGS = ["enemies hit by projectiles emitted towards {0}"]
 
+class DelayArea(Node):
+	INTYPES = [Area]
+	OUTTYPES = [Area]
+	FORMATSTRINGS = ["delayed {0}"]
+
+class Transform(Node):
+	INTYPES = [Bool]
+	OUTTYPES = [Area]
+	FORMATSTRINGS = ["transform into a {0}"]
 
 converters = [
 	TimeBoolToRandomDirection,
 	InstantPositionFromEntity,
 	EvaluateInstantPositionTimeFunc,
 	EntitiesInArea,
-	DirectionToProjectile
+	DirectionToProjectile,
+	DelayArea,
+	Transform
 ]
 
 
@@ -332,13 +343,13 @@ class PowerGraph:
 		os.system("""C:/"Program Files (x86)"/Graphviz2.38/bin/dot.exe -Nshape=box -T png multi.dot > {0}""".format(filename))
 		os.remove("multi.dot")
 
-def createUniquePowers(n):
+def createUniquePowers(n, predicate):
 	sigs = set()
 	tries = 100 * n
 	while len(sigs) < n and tries:
 		tries -= 1
 		powerGraph = attemptCreatePowerGraph()
-		if powerGraph:
+		if powerGraph and predicate(powerGraph):
 			types = tuple(sorted(node.__class__ for node in powerGraph.nodes))
 			if types not in sigs:
 				sigs.add(types)
@@ -348,5 +359,8 @@ def createUniquePowers(n):
 
 logger.setLevel(logging.INFO)
 
-for i, power in enumerate(createUniquePowers(10)):
+def mustContainNode(nodetype):
+	return lambda graph: any(isinstance(node, nodetype) for node in graph.nodes)
+
+for i, power in enumerate(createUniquePowers(10, mustContainNode(TeleportPlayer))):
 	power.renderToFile("out/power{0}.png".format(i))
