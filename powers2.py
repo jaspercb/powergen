@@ -16,14 +16,14 @@ class TypedValue:
 	def __repr__(self):
 		return 'TypedValue(type={0}, value={1})'.format(self.type, self.description)
 
-Position = namedtuple("Position", "x y")
+InstantPosition = namedtuple("InstantPosition", "x y")
 Direction = namedtuple("Direction", "dx dy")
 EntityId = namedtuple("EntityId", "null")
 EnemyEntityId = namedtuple("EnemyEntityId", "null")
 GameEffect = namedtuple("GameEffect", "null")
-PositionTimeFunc = type("PositionTimeFunc", (), {})
+InstantPositionTimeFunc = type("InstantPositionTimeFunc", (), {})
 Area = type("Area", (), {})
-Time_BoolFunc = type("Time_BoolFunc", (), {})
+Bool = type("Bool", (), {})
 
 logger = logging.getLogger("foo")
 ch = logging.StreamHandler(sys.stdout)
@@ -75,22 +75,22 @@ universals = [
 
 class InputClick(Node):
 	INTYPES = []
-	OUTTYPES = [Position]
+	OUTTYPES = [InstantPosition]
 	FORMATSTRINGS = ["where the user clicked"]
 
-class InputClickDragCircle(Node):
+class InputClickDragCircleArea(Node):
 	INTYPES = []
 	OUTTYPES = [Area]
 	FORMATSTRINGS = ["a click-and-drag circle"]
 
 class InputClickDragRelease(Node):
 	INTYPES = []
-	OUTTYPES = [PositionTimeFunc]
+	OUTTYPES = [InstantPositionTimeFunc]
 	FORMATSTRINGS = ["the path traced by the user between press and release"]
 
 class InputClickDragReleaseDirection(Node):
 	INTYPES = []
-	OUTTYPES = [Position, Direction]
+	OUTTYPES = [InstantPosition, Direction]
 	FORMATSTRINGS = [
 		"where the user clicked",
 		"where the mouse moved before releasing"
@@ -98,7 +98,7 @@ class InputClickDragReleaseDirection(Node):
 
 class InputClickCharge(Node):
 	INTYPES = []
-	OUTTYPES = [Position, float]
+	OUTTYPES = [InstantPosition, float]
 	FORMATSTRINGS = [
 		"where the user clicked and held",
 		"proportional to how long the user held the mouse for"
@@ -106,7 +106,7 @@ class InputClickCharge(Node):
 
 class InputPlaceMines(Node):
 	INTYPES = []
-	OUTTYPES = [Position, float]
+	OUTTYPES = [InstantPosition, float]
 	FORMATSTRINGS = [
 		"where the mines were placed",
 		"proportional to how long the mines charged before detonation"
@@ -114,12 +114,12 @@ class InputPlaceMines(Node):
 
 class InputToggle(Node):
 	INTYPES = []
-	OUTTYPES = [Time_BoolFunc]
+	OUTTYPES = [Bool]
 	FORMATSTRINGS = ["a toggle is held"]
 
 input_nodetypes = [
 	InputClick,
-	InputClickDragCircle,
+	InputClickDragCircleArea,
 	InputClickDragRelease,
 	InputClickDragReleaseDirection,
 	InputClickCharge,
@@ -130,18 +130,18 @@ input_nodetypes = [
 # CONVERTERS
 
 class TimeBoolToRandomDirection(Node):
-	INTYPES = [Time_BoolFunc]
+	INTYPES = [Bool]
 	OUTTYPES = [Direction]
 	FORMATSTRINGS = ["random directions when {0}"]
 
-class PositionFromEntity(Node):
+class InstantPositionFromEntity(Node):
 	INTYPES = [EntityId]
-	OUTTYPES = [Position]
-	FORMATSTRINGS = ["the position of {0}"]
+	OUTTYPES = [InstantPosition]
+	FORMATSTRINGS = ["the InstantPosition of {0}"]
 
-class EvaluatePositionTimeFunc(Node):
-	INTYPES = [PositionTimeFunc]
-	OUTTYPES = [Position]
+class EvaluateInstantPositionTimeFunc(Node):
+	INTYPES = [InstantPositionTimeFunc]
+	OUTTYPES = [InstantPosition]
 	FORMATSTRINGS = ["tracing the path of {0}"]
 
 class EntitiesInArea(Node):
@@ -157,8 +157,8 @@ class DirectionToProjectile(Node):
 
 converters = [
 	TimeBoolToRandomDirection,
-	PositionFromEntity,
-	EvaluatePositionTimeFunc,
+	InstantPositionFromEntity,
+	EvaluateInstantPositionTimeFunc,
 	EntitiesInArea,
 	DirectionToProjectile
 ]
@@ -167,12 +167,12 @@ converters = [
 # GAME EFFECTS
 
 class ExplosionAtPoint(Node):
-	INTYPES = [Position, float]
+	INTYPES = [InstantPosition, float]
 	OUTTYPES = [GameEffect]
 	FORMATSTRINGS = ["an explosion happens, centered on {0} with radius {1}"]
 
 class CloudFollowingPath(Node):
-	INTYPES = [PositionTimeFunc]
+	INTYPES = [InstantPositionTimeFunc]
 	OUTTYPES = [Area]
 	FORMATSTRINGS = ["a cloud following the path of {0}"]
 
@@ -186,11 +186,17 @@ class ConditionOnEntity(Node):
 	OUTTYPES = [GameEffect]
 	FORMATSTRINGS = ["Inflict a condition on {0} with intensity {1}"]
 
+class TeleportPlayer(Node):
+	INTYPES = [EntityId, InstantPosition]
+	OUTTYPES = [GameEffect]
+	FORMATSTRINGS = ["Teleport {0} to {1}"]
+
 game_effects = [
 	ExplosionAtPoint,
 	CloudFollowingPath,
 	DamageToEntity,
-	ConditionOnEntity
+	ConditionOnEntity,
+	TeleportPlayer
 ]
 
 nodetypes = input_nodetypes + converters + game_effects
@@ -292,7 +298,6 @@ class PowerGraph:
 	def __init__(self, nodes, var_to_source_node):
 		self.nodes =  nodes
 		self.var_to_source_node = var_to_source_node
-		print var_to_source_node
 
 	def description(self):
 		descriptions = []
@@ -315,7 +320,6 @@ class PowerGraph:
 			labelFromNode[node] = name
 			G.add_node(name)
 
-		print self.var_to_source_node
 		for destination_node in self.nodes:
 			for var in destination_node.args:
 				source_node = self.var_to_source_node[var]
@@ -325,7 +329,7 @@ class PowerGraph:
 		logger.info("Writing to %s", filename)
 		write_dot(G,'multi.dot')
 
-		os.system("""C:/"Program Files (x86)"/Graphviz2.38/bin/dot.exe -T png multi.dot > {0}""".format(filename))
+		os.system("""C:/"Program Files (x86)"/Graphviz2.38/bin/dot.exe -Nshape=box -T png multi.dot > {0}""".format(filename))
 		os.remove("multi.dot")
 
 def createUniquePowers(n):
@@ -342,7 +346,7 @@ def createUniquePowers(n):
 			else:
 				logger.debug("Generated a non-unique power, retrying...")
 
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 for i, power in enumerate(createUniquePowers(10)):
 	power.renderToFile("out/power{0}.png".format(i))
