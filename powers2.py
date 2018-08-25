@@ -318,7 +318,7 @@ class PowerGraph:
 
 		print self.var_to_source_node
 		for destination_node in self.nodes:
-			for var in node.args:
+			for var in destination_node.args:
 				source_node = self.var_to_source_node[var]
 				if destination_node is not source_node:
 					G.add_edge(labelFromNode[source_node], labelFromNode[destination_node], xlabel=var.type.__name__)
