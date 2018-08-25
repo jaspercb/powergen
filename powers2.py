@@ -4,6 +4,10 @@ from collections import namedtuple, Counter
 import logging
 import sys
 
+import networkx as nx
+from networkx.drawing.nx_pydot import write_dot
+import os
+
 # TypedValue = recordclass("TypedValue", "type value") # for now, a value is just a string descriptor
 class TypedValue:
 	def __init__(self, typ, value):
@@ -27,7 +31,6 @@ formatter = logging.Formatter('%(levelname)s - %(message)s')
 #formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 ch.setFormatter(formatter)
 logger.addHandler(ch)
-logger.setLevel(logging.DEBUG)
 
 class Node:
 	INTYPES  = [] # [type]
@@ -200,11 +203,7 @@ inp = InputClick()
 exp = ExplosionAtPoint(inp.out[0])
 
 # matcher
-RETRIES = 20
-def createPower(retries=RETRIES):
-	if not retries:
-		return None
-		raise ValueError("I tried really hard but couldn't generate anything :(")
+def attemptCreatePowerGraph():
 	nodes = set() # [Node]
 	unused_vars = set() # [TypedVar]
 	used_vars = set()
@@ -264,11 +263,7 @@ def createPower(retries=RETRIES):
 				found = True
 				break
 		if not found:
-			logger.debug("Retrying for the %dth time, couldn't progress with %s", RETRIES-retries+1, str(nodes))
-			return createPower(retries=retries-1)
-
-	if any(var.type != GameEffect for var in unused_vars):
-		pass
+			return None
 
 	# strip out unused nodes
 	queue = [var_to_source_node[var] for var in unused_vars if var.type == GameEffect]
@@ -290,8 +285,8 @@ def createPower(retries=RETRIES):
 	for source in source_nodes:
 		for out in source.out:
 			if out not in used_vars:
-				logger.debug("Retrying for the %dth time, didn't use all outputs in %s", RETRIES-retries+1, str(nodes))
-				return createPower(retries=retries-1)
+				logger.debug("Nope, didn't use all outputs in %s", str(nodes))
+				return None
 
 
 	for _ in range(len(used_nodes)):
@@ -301,27 +296,61 @@ def createPower(retries=RETRIES):
 	#print [node.__class__.__name__ for node in used_nodes[::-1]]
 	#print "Unused", unused_vars
 	#print "Used", used_vars
-	return used_nodes[::-1]
+	return PowerGraph(used_nodes[::-1], var_to_source_node)
+
+class PowerGraph:
+	def __init__(self, nodes, var_to_source_node):
+		self.nodes =  nodes
+		self.var_to_source_node = var_to_source_node
+
+	def description(self):
+		descriptions = []
+		for node in self.nodes:
+			for arg in node.out:
+				if arg.type == GameEffect:
+					descriptions.append(arg.value)
+		return ". ".join(descriptions)
+
+	def render(self):
+		count = 0
+		G=nx.MultiDiGraph()
+		labelFromNode = {}
+		for node in self.nodes:
+			name = node.__class__.__name__ + str(count)
+			count += 1
+			labelFromNode[node] = name
+			G.add_node(name)
+
+		print self.var_to_source_node
+		for destination_node in self.nodes:
+			print destination_node
+			for var in node.args:
+				print var
+				source_node = self.var_to_source_node[var]
+				G.add_edge(labelFromNode[source_node], labelFromNode[destination_node], xlabel=var.type.__name__)
+		#G.add_edge(1, 2, xlabel="bla")
+		#G.add_edge(1, 2)
+		write_dot(G,'multi.dot')
+
+		os.system("""C:/"Program Files (x86)"/Graphviz2.38/bin/dot.exe -T png multi.dot > multi.png""")
 
 def createUniquePowers(n):
 	sigs = set()
-	tries = 100 * n
+	tries = 10 * n
 	while len(sigs) < n and tries:
 		tries -= 1
-		powerNodes = createPower()
-		if powerNodes:
-			types = tuple(sorted(node.__class__ for node in powerNodes))
+		powerGraph = attemptCreatePowerGraph()
+		if powerGraph:
+			types = tuple(sorted(node.__class__ for node in powerGraph.nodes))
 			if types not in sigs:
 				sigs.add(types)
-				print [typ.__name__ for typ in types]
-				for node in powerNodes:
-					for arg in node.out:
-						if arg.type == GameEffect:
-							print arg.value
-				print
-		else:
-			print powerNodes
+				yield powerGraph
+				#print [typ.__name__ for typ in types]
 
-createUniquePowers(3)
+
+logger.setLevel(logging.INFO)
+
+for power in createUniquePowers(100):
+	power.render()
 #for i in range(10):
 #	createPower()
