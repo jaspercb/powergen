@@ -195,10 +195,6 @@ game_effects = [
 
 nodetypes = input_nodetypes + converters + game_effects
 
-# Node sanity tests
-inp = InputClick()
-exp = ExplosionAtPoint(inp.out[0], TypedValue(float, "something"))
-
 # matcher
 def attemptCreatePowerGraph():
 	nodes = set() # [Node]
@@ -227,7 +223,7 @@ def attemptCreatePowerGraph():
 			# Don't add inputs that give us types we already have
 			new_types = Counter(nodetype.OUTTYPES)
 			available_types = Counter(i.type for i in unused_vars)
-			return not (available_types - new_types) and not (new_types - available_types)
+			return (available_types - new_types)
 		return True
 
 	def addNodeType(nodetype):
@@ -250,11 +246,14 @@ def attemptCreatePowerGraph():
 	#step 1: create a graph that, eventually, terminates at a node
 	while not nodes or not any(i.type == GameEffect for i in unused_vars):
 		logger.debug("Current state:\n\tNodes: %s\n\tUnused vars: %s", str(nodes), str([v.type.__name__ for v in unused_vars]))
-		options = [nt for nt in nodetypes if canAddNodeType(nt) and shouldAddNodeType(nt)]
-		if not options:
-			logger.error("We couldn't add anything, that's really weird")
+		addableNodetypes = [nt for nt in nodetypes if canAddNodeType(nt)]
+		logger.debug("Nodes we could add: %s", str([nt.__name__ for nt in addableNodetypes]))
+		shouldAddableNodeTypes = [nt for nt in addableNodetypes if shouldAddNodeType(nt)]
+		logger.debug("Nodes we should add: %s", str([nt.__name__ for nt in shouldAddableNodeTypes]))
+		if not shouldAddableNodeTypes:
+			logger.error("We souldn't add anything, that's really weird")
 			return None
-		addNodeType(random.choice(options))
+		addNodeType(random.choice(shouldAddableNodeTypes))
 
 	# strip out unused nodes
 	queue = [var_to_source_node[var] for var in unused_vars if var.type == GameEffect]
@@ -340,8 +339,10 @@ def createUniquePowers(n):
 			if types not in sigs:
 				sigs.add(types)
 				yield powerGraph
+			else:
+				logger.debug("Generated a non-unique power, retrying...")
 
 logger.setLevel(logging.DEBUG)
 
-for i, power in enumerate(createUniquePowers(4)):
+for i, power in enumerate(createUniquePowers(10)):
 	power.renderToFile("out/power{0}.png".format(i))
