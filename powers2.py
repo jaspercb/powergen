@@ -54,6 +54,23 @@ class Node:
 		return [var.description for var in self.out]
 
 
+# UNIVERSALS (things you always have access to)
+
+class ConstantFloat(Node):
+	INTYPES = []
+	OUTTYPES = [float]
+	FORMATSTRINGS = ["$CONSTANT"]
+
+class OwningEntity(Node):
+	INTYPES = []
+	OUTTYPES = [EntityId]
+	FORMATSTRINGS = ["the user's character"]
+
+universals = [
+	ConstantFloat,
+	OwningEntity
+]
+
 # INPUTS
 
 class InputClick(Node):
@@ -117,11 +134,6 @@ class TimeBoolToRandomDirection(Node):
 	OUTTYPES = [Direction]
 	FORMATSTRINGS = ["random directions when {0}"]
 
-class OwningEntity(Node):
-	INTYPES = []
-	OUTTYPES = [EntityId]
-	FORMATSTRINGS = ["the user's character"]
-
 class PositionFromEntity(Node):
 	INTYPES = [EntityId]
 	OUTTYPES = [Position]
@@ -131,11 +143,6 @@ class EvaluatePositionTimeFunc(Node):
 	INTYPES = [PositionTimeFunc]
 	OUTTYPES = [Position]
 	FORMATSTRINGS = ["tracing the path of {0}"]
-
-class ConstantFloat(Node):
-	INTYPES = []
-	OUTTYPES = [float]
-	FORMATSTRINGS = ["$CONSTANT"]
 
 class EntitiesInArea(Node):
 	INTYPES = [Area]
@@ -150,10 +157,8 @@ class DirectionToProjectile(Node):
 
 converters = [
 	TimeBoolToRandomDirection,
-	OwningEntity,
 	PositionFromEntity,
 	EvaluatePositionTimeFunc,
-	ConstantFloat,
 	EntitiesInArea,
 	DirectionToProjectile
 ]
@@ -239,9 +244,12 @@ def attemptCreatePowerGraph():
 			var_to_source_node[outvar] = node
 			unused_vars.add(outvar)
 
+	for universaltype in universals:
+		addNodeType(universaltype)
+
 	#step 1: create a graph that, eventually, terminates at a node
 	while not nodes or not any(i.type == GameEffect for i in unused_vars):
-		logger.debug("Current state: %s", str(nodes))
+		logger.debug("Current state:\n\tNodes: %s\n\tUnused vars: %s", str(nodes), str([v.type.__name__ for v in unused_vars]))
 		options = [nt for nt in nodetypes if canAddNodeType(nt) and shouldAddNodeType(nt)]
 		if not options:
 			logger.error("We couldn't add anything, that's really weird")
@@ -285,6 +293,7 @@ class PowerGraph:
 	def __init__(self, nodes, var_to_source_node):
 		self.nodes =  nodes
 		self.var_to_source_node = var_to_source_node
+		print var_to_source_node
 
 	def description(self):
 		descriptions = []
@@ -314,6 +323,7 @@ class PowerGraph:
 				if destination_node is not source_node:
 					G.add_edge(labelFromNode[source_node], labelFromNode[destination_node], xlabel=var.type.__name__)
 
+		logger.info("Writing to %s", filename)
 		write_dot(G,'multi.dot')
 
 		os.system("""C:/"Program Files (x86)"/Graphviz2.38/bin/dot.exe -T png multi.dot > {0}""".format(filename))
