@@ -27,14 +27,15 @@ Time_BoolFunc = type("Time_BoolFunc", (), {})
 
 logger = logging.getLogger("foo")
 ch = logging.StreamHandler(sys.stdout)
-formatter = logging.Formatter('%(levelname)s - %(module)s.py:%(lineno)d - %(message)s %(stack_info)s')
+formatter = logging.Formatter('%(levelname)s - %(module)s.py:%(lineno)d - %(message)s')
 #formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 ch.setFormatter(formatter)
 logger.addHandler(ch)
 
 class Node:
-	INTYPES  = [] # [type]
-	OUTTYPES = [] # [type]
+	INTYPES  = None # [type]
+	OUTTYPES = None # [type]
+	FORMATSTRINGS = None # [String]
 
 	def __init__(self, *args):
 		if len(args) != len(self.INTYPES):
@@ -217,17 +218,15 @@ def attemptCreatePowerGraph():
 		if nodetype in [node.__class__ for node in nodes]:
 			return False
 
-
 		if 0 == len(nodetype.INTYPES):
-			return False
 			# Don't add inputs that give us types we already have
 			new_types = Counter(nodetype.OUTTYPES)
 			available_types = Counter(i.type for i in unused_vars)
 			return not (available_types - new_types) and not (new_types - available_types)
 		return True
 
-	def addNodeType(node):
-		logger.debug("adding %s", str(node))
+	def addNodeType(nodetype):
+		logger.debug("adding %s", str(nodetype))
 		args = []
 		for t in nodetype.INTYPES:
 			arg = random.choice([v for v in unused_vars if v.type == t])
@@ -240,21 +239,14 @@ def attemptCreatePowerGraph():
 			var_to_source_node[outvar] = node
 			unused_vars.add(outvar)
 
-	random.shuffle(nodetypes)
 	#step 1: create a graph that, eventually, terminates at a node
 	while not nodes or not any(i.type == GameEffect for i in unused_vars):
-		found = False
 		logger.debug("Current state: %s", str(nodes))
-		for nodetype in nodetypes:
-			a = canAddNodeType(nodetype)
-			b = shouldAddNodeType(nodetype)
-			logger.debug("considering adding %s     can I? %d    should I? %d", str(nodetype), a, b)
-			if a and b:
-				addNodeType(nodetype)
-				found = True
-				break
-		if not found:
+		options = [nt for nt in nodetypes if canAddNodeType(nt) and shouldAddNodeType(nt)]
+		if not options:
+			logger.error("We couldn't add anything, that's really weird")
 			return None
+		addNodeType(random.choice(options))
 
 	# strip out unused nodes
 	queue = [var_to_source_node[var] for var in unused_vars if var.type == GameEffect]
@@ -317,14 +309,11 @@ class PowerGraph:
 
 		print self.var_to_source_node
 		for destination_node in self.nodes:
-			print destination_node
 			for var in node.args:
-				print var
 				source_node = self.var_to_source_node[var]
 				if destination_node is not source_node:
 					G.add_edge(labelFromNode[source_node], labelFromNode[destination_node], xlabel=var.type.__name__)
-		#G.add_edge(1, 2, xlabel="bla")
-		#G.add_edge(1, 2)
+
 		write_dot(G,'multi.dot')
 
 		os.system("""C:/"Program Files (x86)"/Graphviz2.38/bin/dot.exe -T png multi.dot > {0}""".format(filename))
@@ -341,11 +330,8 @@ def createUniquePowers(n):
 			if types not in sigs:
 				sigs.add(types)
 				yield powerGraph
-				#print [typ.__name__ for typ in types]
 
+logger.setLevel(logging.DEBUG)
 
-logger.setLevel(logging.INFO)
-
-for i, power in enumerate(createUniquePowers(100)):
+for i, power in enumerate(createUniquePowers(4)):
 	power.renderToFile("out/power{0}.png".format(i))
-#	createPower()
