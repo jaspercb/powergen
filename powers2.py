@@ -10,11 +10,11 @@ import os
 
 # TypedValue = recordclass("TypedValue", "type value") # for now, a value is just a string descriptor
 class TypedValue:
-	def __init__(self, typ, value):
+	def __init__(self, typ, description):
 		self.type = typ
-		self.value = value
+		self.description = description
 	def __repr__(self):
-		return 'TypedValue(type={0}, value={1})'.format(self.type, self.value)
+		return 'TypedValue(type={0}, value={1})'.format(self.type, self.description)
 
 Position = namedtuple("Position", "x y")
 Direction = namedtuple("Direction", "dx dy")
@@ -46,12 +46,12 @@ class Node:
 		self.out = tuple(TypedValue(t, "uninitialized") for t in self.OUTTYPES)
 
 	def bake(self):
-		argdescriptions = [arg.value for arg in self.args]
+		argdescriptions = [arg.description for arg in self.args]
 		for out, formatstring in zip(self.out, self.FORMATSTRINGS):
-			out.value = formatstring.format(*argdescriptions)
+			out.description = formatstring.format(*argdescriptions)
 
 	def values(self):
-		return [var.value for var in self.out]
+		return [var.description for var in self.out]
 
 
 # INPUTS
@@ -291,7 +291,7 @@ class PowerGraph:
 		for node in self.nodes:
 			for arg in node.out:
 				if arg.type == GameEffect:
-					descriptions.append(arg.value)
+					descriptions.append(arg.description)
 		return ". ".join(descriptions)
 
 	def render(self):
