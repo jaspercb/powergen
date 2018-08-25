@@ -27,7 +27,7 @@ Time_BoolFunc = type("Time_BoolFunc", (), {})
 
 logger = logging.getLogger("foo")
 ch = logging.StreamHandler(sys.stdout)
-formatter = logging.Formatter('%(levelname)s - %(message)s')
+formatter = logging.Formatter('%(levelname)s - %(module)s.py:%(lineno)d - %(message)s %(stack_info)s')
 #formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 ch.setFormatter(formatter)
 logger.addHandler(ch)
@@ -37,13 +37,17 @@ class Node:
 	OUTTYPES = [] # [type]
 
 	def __init__(self, *args):
+		if len(args) != len(self.INTYPES):
+			logger.warning("Node constructor %s expected %d args of type %s, got %d: %s", self.__class__.__name__, len(self.INTYPES), [i.__name__ for i in self.INTYPES], len(args), str([arg.type.__name__ for arg in args]))
 		for tv, t in zip(args, self.INTYPES):
 			assert(tv.type == t)
 		self.args = args
 		self.out = tuple(TypedValue(t, "uninitialized") for t in self.OUTTYPES)
 
 	def bake(self):
-		pass
+		argdescriptions = [arg.value for arg in self.args]
+		for out, formatstring in zip(self.out, self.FORMATSTRINGS):
+			out.value = formatstring.format(*argdescriptions)
 
 	def values(self):
 		return [var.value for var in self.out]
@@ -54,47 +58,46 @@ class Node:
 class InputClick(Node):
 	INTYPES = []
 	OUTTYPES = [Position]
-	def bake(self):
-		self.out[0].value = "where the user clicked"
+	FORMATSTRINGS = ["where the user clicked"]
 
 class InputClickDragCircle(Node):
 	INTYPES = []
 	OUTTYPES = [Area]
-	def bake(self):
-		self.out[0].value = "a click-and-drag circle"
+	FORMATSTRINGS = ["a click-and-drag circle"]
 
 class InputClickDragRelease(Node):
 	INTYPES = []
 	OUTTYPES = [PositionTimeFunc]
-	def bake(self):
-		self.out[0].value = "the path traced by the user between press and release"
+	FORMATSTRINGS = ["the path traced by the user between press and release"]
 
 class InputClickDragReleaseDirection(Node):
 	INTYPES = []
 	OUTTYPES = [Position, Direction]
-	def bake(self):
-		self.out[0].value = "where the user clicked"
-		self.out[1].value = "where the mouse moved before releasing"
+	FORMATSTRINGS = [
+		"where the user clicked",
+		"where the mouse moved before releasing"
+	]
 
 class InputClickCharge(Node):
 	INTYPES = []
 	OUTTYPES = [Position, float]
-	def bake(self):
-		self.out[0].value = "where the user clicked and held"
-		self.out[1].value = "proportional to how long the user held the mouse for"
+	FORMATSTRINGS = [
+		"where the user clicked and held",
+		"proportional to how long the user held the mouse for"
+	]
 
 class InputPlaceMines(Node):
 	INTYPES = []
 	OUTTYPES = [Position, float]
-	def bake(self):
-		self.out[0].value = "where the mines were placed"
-		self.out[1].value = "proportional to how long the mines charged before detonation"
+	FORMATSTRINGS = [
+		"where the mines were placed",
+		"proportional to how long the mines charged before detonation"
+	]
 
 class InputToggle(Node):
 	INTYPES = []
 	OUTTYPES = [Time_BoolFunc]
-	def bake(self):
-		self.out[0].value = "a toggle is held"
+	FORMATSTRINGS = ["a toggle is held"]
 
 input_nodetypes = [
 	InputClick,
@@ -111,44 +114,37 @@ input_nodetypes = [
 class TimeBoolToRandomDirection(Node):
 	INTYPES = [Time_BoolFunc]
 	OUTTYPES = [Direction]
-	def bake(self):
-		self.out[0].value = "random directions when {0}".format(self.args[0].value)
+	FORMATSTRINGS = ["random directions when {0}"]
 
 class OwningEntity(Node):
 	INTYPES = []
 	OUTTYPES = [EntityId]
-	def bake(self):
-		self.out[0].value = "the user's character"
+	FORMATSTRINGS = ["the user's character"]
 
 class PositionFromEntity(Node):
 	INTYPES = [EntityId]
 	OUTTYPES = [Position]
-	def bake(self):
-		self.out[0].value = "the position of {0}".format(self.args[0].value)
+	FORMATSTRINGS = ["the position of {0}"]
 
 class EvaluatePositionTimeFunc(Node):
 	INTYPES = [PositionTimeFunc]
 	OUTTYPES = [Position]
-	def bake(self):
-		self.out[0].value = "tracing the path of {0}".format(self.args[0].value)
+	FORMATSTRINGS = ["tracing the path of {0}"]
 
 class ConstantFloat(Node):
 	INTYPES = []
 	OUTTYPES = [float]
-	def bake(self):
-		self.out[0].value = "$CONSTANT"
+	FORMATSTRINGS = ["$CONSTANT"]
 
 class EntitiesInArea(Node):
 	INTYPES = [Area]
 	OUTTYPES = [EnemyEntityId]
-	def bake(self):
-		self.out[0].value = "entites in {0}".format(self.args[0].value)
+	FORMATSTRINGS = ["entities in {0}"]
 
 class DirectionToProjectile(Node):
 	INTYPES = [Direction]
 	OUTTYPES = [EnemyEntityId]
-	def bake(self):
-		self.out[0].value = "enemies hit by projectiles emitted towards {0}".format(self.args[0].value)
+	FORMATSTRINGS = ["enemies hit by projectiles emitted towards {0}"]
 
 
 converters = [
@@ -167,27 +163,22 @@ converters = [
 class ExplosionAtPoint(Node):
 	INTYPES = [Position, float]
 	OUTTYPES = [GameEffect]
-	def bake(self):
-		self.out[0].value = "an explosion happens, centered on {0} with radius {1}".format(self.args[0].value, self.args[1].value)
+	FORMATSTRINGS = ["an explosion happens, centered on {0} with radius {1}"]
 
 class CloudFollowingPath(Node):
 	INTYPES = [PositionTimeFunc]
 	OUTTYPES = [Area]
-	def bake(self):
-		self.out[0].value = "a cloud following the path of {0}".format(self.args[0].value)
+	FORMATSTRINGS = ["a cloud following the path of {0}"]
 
 class DamageToEntity(Node):
 	INTYPES = [EnemyEntityId, float]
 	OUTTYPES = [GameEffect]
-	def bake(self):
-		self.out[0].value = "Deal damage to {0} that scales with {1}".format(self.args[0].value, self.args[1].value)
+	FORMATSTRINGS = ["Deal damage to {0} that scales with {1}"]
 
 class ConditionOnEntity(Node):
 	INTYPES = [EnemyEntityId, float]
 	OUTTYPES = [GameEffect]
-	def bake(self):
-		self.out[0].value = "Inflict a condition on {0} with intensity {1}".format(self.args[0].value, self.args[1].value)
-
+	FORMATSTRINGS = ["Inflict a condition on {0} with intensity {1}"]
 
 game_effects = [
 	ExplosionAtPoint,
@@ -200,7 +191,7 @@ nodetypes = input_nodetypes + converters + game_effects
 
 # Node sanity tests
 inp = InputClick()
-exp = ExplosionAtPoint(inp.out[0])
+exp = ExplosionAtPoint(inp.out[0], TypedValue(float, "something"))
 
 # matcher
 def attemptCreatePowerGraph():
@@ -312,6 +303,9 @@ class PowerGraph:
 		return ". ".join(descriptions)
 
 	def render(self):
+		pass
+
+	def renderToFile(self, filename):
 		count = 0
 		G=nx.MultiDiGraph()
 		labelFromNode = {}
@@ -327,16 +321,18 @@ class PowerGraph:
 			for var in node.args:
 				print var
 				source_node = self.var_to_source_node[var]
-				G.add_edge(labelFromNode[source_node], labelFromNode[destination_node], xlabel=var.type.__name__)
+				if destination_node is not source_node:
+					G.add_edge(labelFromNode[source_node], labelFromNode[destination_node], xlabel=var.type.__name__)
 		#G.add_edge(1, 2, xlabel="bla")
 		#G.add_edge(1, 2)
 		write_dot(G,'multi.dot')
 
-		os.system("""C:/"Program Files (x86)"/Graphviz2.38/bin/dot.exe -T png multi.dot > multi.png""")
+		os.system("""C:/"Program Files (x86)"/Graphviz2.38/bin/dot.exe -T png multi.dot > {0}""".format(filename))
+		os.remove("multi.dot")
 
 def createUniquePowers(n):
 	sigs = set()
-	tries = 10 * n
+	tries = 100 * n
 	while len(sigs) < n and tries:
 		tries -= 1
 		powerGraph = attemptCreatePowerGraph()
@@ -350,7 +346,6 @@ def createUniquePowers(n):
 
 logger.setLevel(logging.INFO)
 
-for power in createUniquePowers(100):
-	power.render()
-#for i in range(10):
+for i, power in enumerate(createUniquePowers(100)):
+	power.renderToFile("out/power{0}.png".format(i))
 #	createPower()
