@@ -268,7 +268,7 @@ def attemptCreatePowerGraph():
 		shouldAddableNodeTypes = [nt for nt in addableNodetypes if shouldAddNodeType(nt)]
 		logger.debug("Nodes we should add: %s", str([nt.__name__ for nt in shouldAddableNodeTypes]))
 		if not shouldAddableNodeTypes:
-			logger.error("We souldn't add anything, that's really weird")
+			logger.error("We shouldn't add anything, that's really weird")
 			return None
 		addNodeType(random.choice(shouldAddableNodeTypes))
 
@@ -284,7 +284,7 @@ def attemptCreatePowerGraph():
 
 	# now that we have all used nodes, let's check that every output from every source is used
 	used_vars = set()
-	for node in nodes:
+	for node in used_nodes:
 		for var in node.args:
 			used_vars.add(var)
 	source_nodes = [node for node in used_nodes if not node.args]
