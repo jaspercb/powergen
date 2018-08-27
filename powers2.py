@@ -16,12 +16,13 @@ class TypedValue:
 	def __repr__(self):
 		return 'TypedValue(type={0}, value={1})'.format(self.type, self.description)
 
-InstantPosition = namedtuple("InstantPosition", "x y")
+Position = namedtuple("Position", "x y")
+Path = namedtuple("Path", "points")
 Direction = namedtuple("Direction", "dx dy")
 EntityId = namedtuple("EntityId", "null")
 EnemyEntityId = namedtuple("EnemyEntityId", "null")
 GameEffect = namedtuple("GameEffect", "null")
-InstantPositionTimeFunc = type("InstantPositionTimeFunc", (), {})
+PositionTimeFunc = type("PositionTimeFunc", (), {})
 Area = type("Area", (), {})
 Bool = type("Bool", (), {})
 
@@ -75,7 +76,7 @@ universals = [
 
 class InputClick(Node):
 	INTYPES = []
-	OUTTYPES = [InstantPosition]
+	OUTTYPES = [Position]
 	FORMATSTRINGS = ["where the user clicked"]
 
 class InputClickDragCircleArea(Node):
@@ -85,12 +86,12 @@ class InputClickDragCircleArea(Node):
 
 class InputClickDragRelease(Node):
 	INTYPES = []
-	OUTTYPES = [InstantPositionTimeFunc]
+	OUTTYPES = [PositionTimeFunc]
 	FORMATSTRINGS = ["the path traced by the user between press and release"]
 
 class InputClickDragReleaseDirection(Node):
 	INTYPES = []
-	OUTTYPES = [InstantPosition, Direction]
+	OUTTYPES = [Position, Direction]
 	FORMATSTRINGS = [
 		"where the user clicked",
 		"where the mouse moved before releasing"
@@ -98,7 +99,7 @@ class InputClickDragReleaseDirection(Node):
 
 class InputClickCharge(Node):
 	INTYPES = []
-	OUTTYPES = [InstantPosition, float]
+	OUTTYPES = [Position, float]
 	FORMATSTRINGS = [
 		"where the user clicked and held",
 		"proportional to how long the user held the mouse for"
@@ -106,7 +107,7 @@ class InputClickCharge(Node):
 
 class InputPlaceMines(Node):
 	INTYPES = []
-	OUTTYPES = [InstantPosition, float]
+	OUTTYPES = [Position, float]
 	FORMATSTRINGS = [
 		"where the mines were placed",
 		"proportional to how long the mines charged before detonation"
@@ -134,14 +135,14 @@ class TimeBoolToRandomDirection(Node):
 	OUTTYPES = [Direction]
 	FORMATSTRINGS = ["random directions when {0}"]
 
-class InstantPositionFromEntity(Node):
+class PositionFromEntity(Node):
 	INTYPES = [EntityId]
-	OUTTYPES = [InstantPosition]
-	FORMATSTRINGS = ["the InstantPosition of {0}"]
+	OUTTYPES = [Position]
+	FORMATSTRINGS = ["the Position of {0}"]
 
-class EvaluateInstantPositionTimeFunc(Node):
-	INTYPES = [InstantPositionTimeFunc]
-	OUTTYPES = [InstantPosition]
+class PositionTimeFuncToPath(Node):
+	INTYPES = [PositionTimeFunc]
+	OUTTYPES = [Path]
 	FORMATSTRINGS = ["tracing the path of {0}"]
 
 class EntitiesInArea(Node):
@@ -164,28 +165,35 @@ class Transform(Node):
 	OUTTYPES = [Area]
 	FORMATSTRINGS = ["transform into a {0}"]
 
+class CloudFollowingPositionTimeFunc(Node):
+	INTYPES = [PositionTimeFunc]
+	OUTTYPES = [Area]
+	FORMATSTRINGS = ["a cloud following the path of {0}"]
+
+class PathToArea(Node):
+	INTYPES = [Path]
+	OUTTYPES = [Area]
+	FORMATSTRINGS = ["a cloud tracing {0}"]
+
 converters = [
 	TimeBoolToRandomDirection,
-	InstantPositionFromEntity,
-	EvaluateInstantPositionTimeFunc,
+	PositionFromEntity,
+	PositionTimeFuncToPath,
 	EntitiesInArea,
 	DirectionToProjectile,
 	DelayArea,
-	Transform
+	Transform,
+	CloudFollowingPositionTimeFunc,
+	PathToArea
 ]
 
 
 # GAME EFFECTS
 
 class ExplosionAtPoint(Node):
-	INTYPES = [InstantPosition, float]
+	INTYPES = [Position, float]
 	OUTTYPES = [GameEffect]
 	FORMATSTRINGS = ["an explosion happens, centered on {0} with radius {1}"]
-
-class CloudFollowingPath(Node):
-	INTYPES = [InstantPositionTimeFunc]
-	OUTTYPES = [Area]
-	FORMATSTRINGS = ["a cloud following the path of {0}"]
 
 class DamageToEntity(Node):
 	INTYPES = [EnemyEntityId, float]
@@ -198,13 +206,12 @@ class ConditionOnEntity(Node):
 	FORMATSTRINGS = ["Inflict a condition on {0} with intensity {1}"]
 
 class TeleportPlayer(Node):
-	INTYPES = [EntityId, InstantPosition]
+	INTYPES = [EntityId, Position]
 	OUTTYPES = [GameEffect]
 	FORMATSTRINGS = ["Teleport {0} to {1}"]
 
 game_effects = [
 	ExplosionAtPoint,
-	CloudFollowingPath,
 	DamageToEntity,
 	ConditionOnEntity,
 	TeleportPlayer
@@ -343,7 +350,7 @@ class PowerGraph:
 		os.system("""C:/"Program Files (x86)"/Graphviz2.38/bin/dot.exe -Nshape=box -T png multi.dot > {0}""".format(filename))
 		os.remove("multi.dot")
 
-def createUniquePowers(n, predicate):
+def createUniquePowers(n, predicate=lambda pg: True):
 	sigs = set()
 	tries = 100 * n
 	while len(sigs) < n and tries:
@@ -362,5 +369,5 @@ logger.setLevel(logging.INFO)
 def mustContainNode(nodetype):
 	return lambda graph: any(isinstance(node, nodetype) for node in graph.nodes)
 
-for i, power in enumerate(createUniquePowers(10, mustContainNode(TeleportPlayer))):
+for i, power in enumerate(createUniquePowers(10)):
 	power.renderToFile("out/power{0}.png".format(i))
