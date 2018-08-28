@@ -1,3 +1,21 @@
+"""
+DONE
+	* Synthesize DAGs that represent abilities from a set of components
+TODO:
+	* Different payoffs
+		* Walls
+		* Displaces (pull, push)
+	* Damage modifiers
+		* Lifesteal
+	* Generate consistent sets of abilities
+		* Elemental palettes
+	* Cross-ability interaction
+		* E.g. one ability chills, another ability "pops" it for a freeze
+		* Probably easier to build into palettes and damage types
+
+"""
+
+
 import random
 from collections import namedtuple, Counter
 
@@ -17,12 +35,11 @@ class TypedValue:
 		return 'TypedValue(type={0}, value={1})'.format(self.type, self.description)
 
 Position = namedtuple("Position", "x y")
-Path = namedtuple("Path", "points")
+SimplePath = namedtuple("SimplePath", "points")
 Direction = namedtuple("Direction", "dx dy")
 EntityId = namedtuple("EntityId", "null")
 EnemyEntityId = namedtuple("EnemyEntityId", "null")
 GameEffect = namedtuple("GameEffect", "null")
-PositionTimeFunc = type("PositionTimeFunc", (), {})
 Area = type("Area", (), {})
 Bool = type("Bool", (), {})
 
@@ -79,15 +96,10 @@ class InputClick(Node):
 	OUTTYPES = [Position]
 	FORMATSTRINGS = ["where the user clicked"]
 
-class InputClickDragCircleArea(Node):
+class InputPerpendicularLine(Node):
 	INTYPES = []
-	OUTTYPES = [Area]
-	FORMATSTRINGS = ["a click-and-drag circle"]
-
-class InputClickDragRelease(Node):
-	INTYPES = []
-	OUTTYPES = [PositionTimeFunc]
-	FORMATSTRINGS = ["the path traced by the user between press and release"]
+	OUTTYPES = [SimplePath]
+	FORMATSTRINGS = ["a line perpendicular to the player"]
 
 class InputClickDragReleaseDirection(Node):
 	INTYPES = []
@@ -113,6 +125,13 @@ class InputPlaceMines(Node):
 		"proportional to how long the mines charged before detonation"
 	]
 
+class InputUnitTargetEnemy(Node):
+	INTYPES = []
+	OUTTYPES = [EnemyEntityId]
+	FORMATSTRINGS = [
+		"the clicked enemy",
+	]
+
 class InputToggle(Node):
 	INTYPES = []
 	OUTTYPES = [Bool]
@@ -120,15 +139,20 @@ class InputToggle(Node):
 
 input_nodetypes = [
 	InputClick,
-	InputClickDragCircleArea,
-	InputClickDragRelease,
+	InputPerpendicularLine,
 	InputClickDragReleaseDirection,
 	InputClickCharge,
 	InputPlaceMines,
-	InputToggle
+	InputToggle,
+	InputUnitTargetEnemy
 ]
 
 # CONVERTERS
+
+class PositionToArea(Node):
+	INTYPES = [Position, float]
+	OUTTYPES = [Area]
+	FORMATSTRINGS = ["an area centered on {0} with radius {1}"]
 
 class TimeBoolToRandomDirection(Node):
 	INTYPES = [Bool]
@@ -139,11 +163,6 @@ class PositionFromEntity(Node):
 	INTYPES = [EntityId]
 	OUTTYPES = [Position]
 	FORMATSTRINGS = ["the Position of {0}"]
-
-class PositionTimeFuncToPath(Node):
-	INTYPES = [PositionTimeFunc]
-	OUTTYPES = [Path]
-	FORMATSTRINGS = ["tracing the path of {0}"]
 
 class EntitiesInArea(Node):
 	INTYPES = [Area]
@@ -165,26 +184,26 @@ class Transform(Node):
 	OUTTYPES = [Area]
 	FORMATSTRINGS = ["transform into a {0}"]
 
-class CloudFollowingPositionTimeFunc(Node):
-	INTYPES = [PositionTimeFunc]
+class CloudFollowingPath(Node):
+	INTYPES = [SimplePath]
 	OUTTYPES = [Area]
 	FORMATSTRINGS = ["a cloud following the path of {0}"]
 
 class PathToArea(Node):
-	INTYPES = [Path]
+	INTYPES = [SimplePath]
 	OUTTYPES = [Area]
 	FORMATSTRINGS = ["a cloud tracing {0}"]
 
 converters = [
+	PositionToArea,
 	TimeBoolToRandomDirection,
 	PositionFromEntity,
-	PositionTimeFuncToPath,
 	EntitiesInArea,
 	DirectionToProjectile,
 	DelayArea,
 	Transform,
-	CloudFollowingPositionTimeFunc,
-	PathToArea
+	CloudFollowingPath,
+	PathToArea,
 ]
 
 
@@ -210,14 +229,31 @@ class TeleportPlayer(Node):
 	OUTTYPES = [GameEffect]
 	FORMATSTRINGS = ["Teleport {0} to {1}"]
 
+class Wall(Node):
+	INTYPES = [SimplePath]
+	OUTTYPES = [GameEffect]
+	FORMATSTRINGS = ["A wall following {0}"]
+
 game_effects = [
 	ExplosionAtPoint,
 	DamageToEntity,
 	ConditionOnEntity,
-	TeleportPlayer
+	TeleportPlayer,
+	Wall
 ]
 
 nodetypes = input_nodetypes + converters + game_effects
+
+# bad code
+# bad bad bad code
+# will error if there's any Node subclass that isn't in `nodetypes` or `universals`
+for name in dir():
+	obj = eval(name)
+	try:
+		if name != "Node" and issubclass(obj, Node) and obj not in nodetypes and obj not in universals:
+			raise ValueError("expected to see {name} in nodetypes".format(name=name))
+	except TypeError:
+		pass
 
 # matcher
 def attemptCreatePowerGraph():
