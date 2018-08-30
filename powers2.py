@@ -46,6 +46,7 @@ SimplePath = namedtuple("SimplePath", "points")
 Direction = namedtuple("Direction", "dx dy")
 EntityId = namedtuple("EntityId", "null")
 EnemyEntityId = namedtuple("EnemyEntityId", "null")
+Damage = namedtuple("Damage", "quant")
 GameEffect = namedtuple("GameEffect", "null")
 Area = type("Area", (), {})
 Bool = type("Bool", (), {})
@@ -162,7 +163,7 @@ input_nodetypes = [
 class PositionToArea(Node):
 	INTYPES = [Position, float]
 	OUTTYPES = [Area]
-	FORMATSTRINGS = ["an area centered on {0} with radius {1}"]
+	FORMATSTRINGS = ["a circle centered on {0} with radius {1}"]
 
 class TimeBoolToRandomDirection(Node):
 	INTYPES = [Bool]
@@ -204,6 +205,11 @@ class PathToArea(Node):
 	OUTTYPES = [Area]
 	FORMATSTRINGS = ["a static cloud covering {0}"]
 
+class DamageLifesteal(Node):
+	INTYPES = [Damage]
+	OUTTYPES = [Damage]
+	FORMATSTRINGS = ["{0} with lifesteal"]
+
 converters = [
 	PositionToArea,
 	TimeBoolToRandomDirection,
@@ -214,20 +220,21 @@ converters = [
 	Transform,
 	CloudFollowingPath,
 	PathToArea,
+	DamageLifesteal,
 ]
 
 
 # GAME EFFECTS
 
-class ExplosionAtPoint(Node):
-	INTYPES = [Position, float]
-	OUTTYPES = [GameEffect]
-	FORMATSTRINGS = ["an explosion happens, centered on {0} with radius {1}"]
-
-class DamageToEntity(Node):
+class AddDamageOnEntity(Node):
 	INTYPES = [EnemyEntityId, float]
-	OUTTYPES = [GameEffect]
-	FORMATSTRINGS = ["Deal damage to {0} that scales with {1}"]
+	OUTTYPES = [Damage]
+	FORMATSTRINGS = ["Deal damage scaling with {1} to {0}"]
+
+class AddDamageOnArea(Node):
+	INTYPES = [Area, float]
+	OUTTYPES = [Damage]
+	FORMATSTRINGS = ["Deal damage scaling with {1} to anyone in {0}"]
 
 class ConditionOnEntity(Node):
 	INTYPES = [EnemyEntityId, float]
@@ -244,12 +251,18 @@ class Wall(Node):
 	OUTTYPES = [GameEffect]
 	FORMATSTRINGS = ["A wall following {0}"]
 
+class TerminateDamage(Node):
+	INTYPES = [Damage]
+	OUTTYPES = [GameEffect]
+	FORMATSTRINGS = ["{0}"]
+
 game_effects = [
-	ExplosionAtPoint,
-	DamageToEntity,
+	AddDamageOnEntity,
+	AddDamageOnArea,
 	ConditionOnEntity,
 	TeleportPlayer,
-	Wall
+	Wall,
+	TerminateDamage
 ]
 
 nodetypes = input_nodetypes + converters + game_effects
@@ -407,10 +420,11 @@ def createUniquePowers(n, predicate=lambda pg: True):
 			else:
 				logger.debug("Generated a non-unique power, retrying...")
 
-logger.setLevel(logging.INFO)
+if __name__ == "__main__":
+	logger.setLevel(logging.INFO)
 
-def mustContainNode(nodetype):
-	return lambda graph: any(isinstance(node, nodetype) for node in graph.nodes)
+	def mustContainNode(nodetype):
+		return lambda graph: any(isinstance(node, nodetype) for node in graph.nodes)
 
-for i, power in enumerate(createUniquePowers(10)):
-	power.renderToFile("out/power{0}.png".format(i))
+	for i, power in enumerate(createUniquePowers(10)):
+		power.renderToFile("out/power{0}.png".format(i))
