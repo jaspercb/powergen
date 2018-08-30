@@ -25,10 +25,12 @@ from collections import namedtuple, Counter
 
 import logging
 import sys
+import itertools
 
 import networkx as nx
 from networkx.drawing.nx_pydot import write_dot
 import os
+from Queue import Queue
 
 """
 
@@ -38,6 +40,7 @@ class TypedValue:
 		self.type = typ
 		self.description = description
 		self.source = None # will be set in Node constructor
+		self.destination = None # will be set, uh, eventually
 	def __repr__(self):
 		return 'TypedValue(type={0}, value={1})'.format(self.type, self.description)
 
@@ -165,7 +168,7 @@ input_nodetypes = [
 	InputUnitTargetEnemy
 ]
 
-# CONVERTERS
+# converter_nodetypes
 
 class PositionToArea(Node):
 	INTYPES = [Position, float]
@@ -191,7 +194,7 @@ class DirectionToProjectile(Node):
 	INTYPES = [Direction]
 	OUTTYPES = [EnemyEntityId]
 	FORMATSTRINGS = ["enemies hit by projectiles emitted towards {0}"]
-
+"""
 class DelayArea(Node):
 	INTYPES = [Area]
 	OUTTYPES = [Area]
@@ -201,7 +204,7 @@ class Transform(Node):
 	INTYPES = [Bool]
 	OUTTYPES = [Area, InputKey]
 	FORMATSTRINGS = ["transform into a {0}", "idk"]
-
+"""
 class CloudFollowingPath(Node):
 	INTYPES = [SimplePath]
 	OUTTYPES = [Area]
@@ -217,14 +220,14 @@ class DamageLifesteal(Node):
 	OUTTYPES = [Damage]
 	FORMATSTRINGS = ["{0} with lifesteal"]
 
-converters = [
+converter_nodetypes = [
 	PositionToArea,
 	TimeBoolToRandomDirection,
 	PositionFromEntity,
 	EntitiesInArea,
 	DirectionToProjectile,
-	DelayArea,
-	Transform,
+	#DelayArea,
+	#Transform,
 	CloudFollowingPath,
 	PathToArea,
 	DamageLifesteal,
@@ -237,11 +240,6 @@ class AddDamageOnEntity(Node):
 	INTYPES = [EnemyEntityId, float]
 	OUTTYPES = [Damage]
 	FORMATSTRINGS = ["Deal damage scaling with {1} to {0}"]
-
-class AddDamageOnArea(Node):
-	INTYPES = [Area, float]
-	OUTTYPES = [Damage]
-	FORMATSTRINGS = ["Deal damage scaling with {1} to anyone in {0}"]
 
 class ConditionOnEntity(Node):
 	INTYPES = [EnemyEntityId, float]
@@ -265,14 +263,13 @@ class TerminateDamage(Node):
 
 game_effects = [
 	AddDamageOnEntity,
-	AddDamageOnArea,
 	ConditionOnEntity,
 	TeleportPlayer,
 	Wall,
 	TerminateDamage
 ]
 
-nodetypes = input_nodetypes + converters + game_effects
+nodetypes = input_nodetypes + converter_nodetypes + game_effects
 
 # bad code
 # bad bad bad code
@@ -285,101 +282,112 @@ for name in dir():
 	except TypeError:
 		pass
 
-# matcher
-def attemptCreatePowerGraph():
-	nodes = set() # [Node]
-	unused_vars = set() # [TypedVar]
-	used_vars = set()
-	var_to_source_node = {}
+def findValidNodeTypes(start_types=universals, end_type=GameEffect, predicate=lambda types: len(types)<4):
+	"""Generator function that performs a bidirectional BFS, searching forward from InputType and backward from GameEffect.
+	A given vertex in the search has two components
+		* A set of "unused types" - corresponding to missing sinks if searching forward, sources if backward
+		* The order in which we added edges - a prefix if searching forward, a suffix if searching backward
+	"""
 
-	def canAddNodeType(nodetype):
-		required_types = Counter(nodetype.INTYPES)
-		available_types = Counter(i.type for i in unused_vars)
-		return not required_types - available_types	
+	def powerset(iterable):
+		"powerset([1,2,3]) --> () (1,) (2,) (3,) (1,2) (1,3) (2,3) (1,2,3)"
+		s = list(iterable)
+		return itertools.chain.from_iterable(itertools.combinations(s, r) for r in range(len(s)+1))
 
-	def shouldAddNodeType(nodetype):
-		# Don't add a node if it only gives us variable types we already have
-		# This feels hacky but whatever.
+	forwardq  = Queue()
+	prefixcache = {} # [Type] -> [NodeType]
+	for subset in powerset(start_types):
+		a = [typ for n in subset for typ in n.OUTTYPES]
+		forwardq.put((frozenset(a), tuple(subset)))
+		prefixcache[tuple(a)] = subset
+	backwardq = Queue()
+	backwardq.put((frozenset([end_type]), ()))
+	suffixcache  = {frozenset([end_type]) : ()} # [Type] -> [NodeType]
 
-		# If we don't have any nodes, sure, we better add something
-		if not nodes:
-			return True
+	# bias the search to prefer certain nodes
+	random.shuffle(nodetypes)
+	def process_forwardq():
+		available_types, nodetypes_prefix = forwardq.get(block=False)
+		if available_types in suffixcache:
+			return
+		def canAddNodeType(nodetype):
+			required_types = Counter(nodetype.INTYPES)
+			return not required_types - Counter(available_types)
 
-		# If we already have a node of this type, maybe don't add another one
-		if nodetype in [node.__class__ for node in nodes]:
-			return False
+		for nodetype in nodetypes:
+			if canAddNodeType(nodetype):
+				new_args = (available_types - frozenset(nodetype.INTYPES)) | frozenset(nodetype.OUTTYPES)
+				new_nodetypes_prefix = nodetypes_prefix + (nodetype,)
+				"""
+				print "forward"
+				print new_args
+				print new_nodetypes_prefix
+				print
+				"""
+				if new_args in suffixcache:
+					return new_nodetypes_prefix + suffixcache[new_args]
+				elif predicate(new_args):
+					forwardq.put((new_args, new_nodetypes_prefix))
+					prefixcache[new_args] = new_nodetypes_prefix
 
-		if 0 == len(nodetype.INTYPES):
-			# Don't add inputs that give us types we already have
-			new_types = Counter(nodetype.OUTTYPES)
-			available_types = Counter(i.type for i in unused_vars)
-			return (available_types - new_types)
-		return True
+	def process_backwardq():
+		# returns _ if 
+		target_types, nodetypes_suffix = backwardq.get(block=False)
+		if target_types in suffixcache:
+			return
+		def canAddNodeType(nodetype):
+			required_types = Counter(target_types)
+			available_types = Counter(nodetype.OUTTYPES)
+			return not required_types - available_types	
 
-	def addNodeType(nodetype):
-		logger.debug("adding %s", str(nodetype))
-		args = []
-		for t in nodetype.INTYPES:
-			arg = random.choice([v for v in unused_vars if v.type == t])
-			unused_vars.remove(arg)
-			used_vars.add(arg)
-			args.append(arg)
-		node = nodetype(*args)
-		nodes.add(node)
-		for outvar in node.out:
-			unused_vars.add(outvar)
-
-	for universaltype in universals:
-		addNodeType(universaltype)
-
-	#step 1: create a graph that, eventually, terminates at a node
-	while not nodes or not any(i.type == GameEffect for i in unused_vars):
-		logger.debug("Current state:\n\tNodes: %s\n\tUnused vars: %s", str(nodes), str([v.type.__name__ for v in unused_vars]))
-		addableNodetypes = [nt for nt in nodetypes if canAddNodeType(nt)]
-		logger.debug("Nodes we could add: %s", str([nt.__name__ for nt in addableNodetypes]))
-		shouldAddableNodeTypes = [nt for nt in addableNodetypes if shouldAddNodeType(nt)]
-		logger.debug("Nodes we should add: %s", str([nt.__name__ for nt in shouldAddableNodeTypes]))
-		if not shouldAddableNodeTypes:
-			logger.error("We shouldn't add anything, that's really weird")
-			return None
-		addNodeType(random.choice(shouldAddableNodeTypes))
-
-	# strip out unused nodes
-	queue = [var.source for var in unused_vars if var.type == GameEffect]
-	used_nodes = set()
-	while queue:
-		node, queue = queue[0], queue[1:]
-		if node not in used_nodes:
-			used_nodes.add(node)
-			for var in node.args:
-				queue.append(var.source)
-
-	# now that we have all used nodes, let's check that every output from every source is used
-	used_vars = set()
-	for node in used_nodes:
-		for var in node.args:
-			used_vars.add(var)
-	source_nodes = [node for node in used_nodes if not node.args]
-
-	for source in source_nodes:
-		for out in source.out:
-			if out not in used_vars:
-				logger.debug("Nope, didn't use all outputs in %s", str(nodes))
-				return None
-
-
-	for _ in range(len(used_nodes)):
-		for n in used_nodes:
-			n.bake()
-
-	#print [node.__class__.__name__ for node in used_nodes[::-1]]
-	#print "Unused", unused_vars
-	#print "Used", used_vars
-	return PowerGraph(used_nodes)
+		for nodetype in nodetypes:
+			if canAddNodeType(nodetype):
+				new_args = (target_types - frozenset(nodetype.OUTTYPES)) | frozenset(nodetype.INTYPES)
+				new_nodetypes_suffix = (nodetype,) + nodetypes_suffix
+				"""
+				print "back"
+				print new_args
+				print new_nodetypes_suffix
+				print
+				"""
+				if new_args in prefixcache:
+					return prefixcache[new_args] + new_nodetypes_suffix
+				elif predicate(new_args):
+					backwardq.put((new_args, new_nodetypes_suffix))
+					suffixcache[new_args] = new_nodetypes_suffix
+	while forwardq.qsize() or backwardq.qsize():
+		if forwardq.qsize():
+			out = process_forwardq()
+			if out: yield out
+		if backwardq.qsize():
+			out = process_backwardq()
+			if out: yield out
 
 class PowerGraph:
 	def __init__(self, nodes):
 		self.nodes =  nodes
+
+	@staticmethod
+	def FromListOfNodeTypes(nodetypes):
+		nodes = set() # [Node]
+		unused_vars = set() # [TypedVar]
+		used_vars = set()
+
+		def addNodeType(nodetype):
+			args = []
+			for t in nodetype.INTYPES:
+				arg = random.choice([v for v in unused_vars if v.type == t])
+				unused_vars.remove(arg)
+				used_vars.add(arg)
+				args.append(arg)
+			node = nodetype(*args)
+			nodes.add(node)
+			for outvar in node.out:
+				unused_vars.add(outvar)
+
+		for nodetype in nodetypes:
+			addNodeType(nodetype)
+		return PowerGraph(nodes)
 
 	def description(self):
 		descriptions = []
@@ -423,7 +431,6 @@ def createUniquePowers(n, predicate=lambda pg: True):
 			types = tuple(sorted(node.__class__ for node in powerGraph.nodes))
 			if types not in sigs:
 				sigs.add(types)
-				print 1000-tries
 				yield powerGraph
 			else:
 				logger.debug("Generated a non-unique power, retrying...")
@@ -431,8 +438,16 @@ def createUniquePowers(n, predicate=lambda pg: True):
 if __name__ == "__main__":
 	logger.setLevel(logging.INFO)
 
+
+	generator = findValidNodeTypes()
+	i = 0
+	for nodetypeslist in generator:
+		PowerGraph.FromListOfNodeTypes(nodetypeslist).renderToFile("out/power{0}.png".format(i))
+		i += 1
+		print nodetypeslist
+
 	def mustContainNode(nodetype):
 		return lambda graph: any(isinstance(node, nodetype) for node in graph.nodes)
 
-	for i, power in enumerate(createUniquePowers(10, mustContainNode(Transform))):
-		power.renderToFile("out/power{0}.png".format(i))
+	#for i, power in enumerate(createUniquePowers(10)):
+	#	power.renderToFile("out/power{0}.png".format(i))
