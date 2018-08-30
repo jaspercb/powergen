@@ -41,6 +41,7 @@ class TypedValue:
 	def __repr__(self):
 		return 'TypedValue(type={0}, value={1})'.format(self.type, self.description)
 
+InputKey = namedtuple("InputKey", "null")
 Position = namedtuple("Position", "x y")
 SimplePath = namedtuple("SimplePath", "points")
 Direction = namedtuple("Direction", "dx dy")
@@ -95,25 +96,31 @@ class OwningEntity(Node):
 	OUTTYPES = [EntityId]
 	FORMATSTRINGS = ["the user's character"]
 
+class InKey(Node):
+	INTYPES = []
+	OUTTYPES = [InputKey]
+	FORMATSTRINGS = [""]
+
 universals = [
 	ConstantFloat,
-	OwningEntity
+	OwningEntity,
+	InKey
 ]
 
 # INPUTS
 
 class InputClick(Node):
-	INTYPES = []
+	INTYPES = [InputKey]
 	OUTTYPES = [Position]
 	FORMATSTRINGS = ["where the user clicked"]
 
 class InputPerpendicularLine(Node):
-	INTYPES = []
+	INTYPES = [InputKey]
 	OUTTYPES = [SimplePath]
 	FORMATSTRINGS = ["a line perpendicular to the player"]
 
 class InputClickDragReleaseDirection(Node):
-	INTYPES = []
+	INTYPES = [InputKey]
 	OUTTYPES = [Position, Direction]
 	FORMATSTRINGS = [
 		"where the user clicked",
@@ -121,7 +128,7 @@ class InputClickDragReleaseDirection(Node):
 	]
 
 class InputClickCharge(Node):
-	INTYPES = []
+	INTYPES = [InputKey]
 	OUTTYPES = [Position, float]
 	FORMATSTRINGS = [
 		"where the user clicked and held",
@@ -129,7 +136,7 @@ class InputClickCharge(Node):
 	]
 
 class InputPlaceMines(Node):
-	INTYPES = []
+	INTYPES = [InputKey]
 	OUTTYPES = [Position, float]
 	FORMATSTRINGS = [
 		"where the mines were placed",
@@ -137,14 +144,14 @@ class InputPlaceMines(Node):
 	]
 
 class InputUnitTargetEnemy(Node):
-	INTYPES = []
+	INTYPES = [InputKey]
 	OUTTYPES = [EnemyEntityId]
 	FORMATSTRINGS = [
 		"the clicked enemy",
 	]
 
 class InputToggle(Node):
-	INTYPES = []
+	INTYPES = [InputKey]
 	OUTTYPES = [Bool]
 	FORMATSTRINGS = ["a toggle is held"]
 
@@ -192,8 +199,8 @@ class DelayArea(Node):
 
 class Transform(Node):
 	INTYPES = [Bool]
-	OUTTYPES = [Area]
-	FORMATSTRINGS = ["transform into a {0}"]
+	OUTTYPES = [Area, InputKey]
+	FORMATSTRINGS = ["transform into a {0}", "idk"]
 
 class CloudFollowingPath(Node):
 	INTYPES = [SimplePath]
@@ -416,6 +423,7 @@ def createUniquePowers(n, predicate=lambda pg: True):
 			types = tuple(sorted(node.__class__ for node in powerGraph.nodes))
 			if types not in sigs:
 				sigs.add(types)
+				print 1000-tries
 				yield powerGraph
 			else:
 				logger.debug("Generated a non-unique power, retrying...")
@@ -426,5 +434,5 @@ if __name__ == "__main__":
 	def mustContainNode(nodetype):
 		return lambda graph: any(isinstance(node, nodetype) for node in graph.nodes)
 
-	for i, power in enumerate(createUniquePowers(10)):
+	for i, power in enumerate(createUniquePowers(10, mustContainNode(Transform))):
 		power.renderToFile("out/power{0}.png".format(i))
