@@ -3,8 +3,12 @@ DONE
 	* Synthesize DAGs that represent abilities from a set of components
 TODO:
 	* Different payoffs
-		* Walls
 		* Displaces (pull, push)
+	* Restrictions on output graphs
+		* Per node restrictions like
+			* Unique in entire graph
+			* Unique in any path
+	* Optimize graph generation to be less "generate a bunch, ignore the bad ones"
 	* Damage modifiers
 		* Lifesteal
 	* Generate consistent sets of abilities
@@ -26,11 +30,14 @@ import networkx as nx
 from networkx.drawing.nx_pydot import write_dot
 import os
 
-# TypedValue = recordclass("TypedValue", "type value") # for now, a value is just a string descriptor
+"""
+
+"""
 class TypedValue:
 	def __init__(self, typ, description):
 		self.type = typ
 		self.description = description
+		self.source = None # will be set in Node constructor
 	def __repr__(self):
 		return 'TypedValue(type={0}, value={1})'.format(self.type, self.description)
 
@@ -56,12 +63,15 @@ class Node:
 	FORMATSTRINGS = None # [String]
 
 	def __init__(self, *args):
+		assert(all(isinstance(arg, TypedValue)) for arg in args)
 		if len(args) != len(self.INTYPES):
 			logger.warning("Node constructor %s expected %d args of type %s, got %d: %s", self.__class__.__name__, len(self.INTYPES), [i.__name__ for i in self.INTYPES], len(args), str([arg.type.__name__ for arg in args]))
 		for tv, t in zip(args, self.INTYPES):
 			assert(tv.type == t)
 		self.args = args
 		self.out = tuple(TypedValue(t, "uninitialized") for t in self.OUTTYPES)
+		for out in self.out:
+			out.source = self
 
 	def bake(self):
 		argdescriptions = [arg.description for arg in self.args]
@@ -187,12 +197,12 @@ class Transform(Node):
 class CloudFollowingPath(Node):
 	INTYPES = [SimplePath]
 	OUTTYPES = [Area]
-	FORMATSTRINGS = ["a cloud following the path of {0}"]
+	FORMATSTRINGS = ["a cloud that moves along {0}"]
 
 class PathToArea(Node):
 	INTYPES = [SimplePath]
 	OUTTYPES = [Area]
-	FORMATSTRINGS = ["a cloud tracing {0}"]
+	FORMATSTRINGS = ["a static cloud covering {0}"]
 
 converters = [
 	PositionToArea,
@@ -297,7 +307,6 @@ def attemptCreatePowerGraph():
 		node = nodetype(*args)
 		nodes.add(node)
 		for outvar in node.out:
-			var_to_source_node[outvar] = node
 			unused_vars.add(outvar)
 
 	for universaltype in universals:
@@ -316,14 +325,14 @@ def attemptCreatePowerGraph():
 		addNodeType(random.choice(shouldAddableNodeTypes))
 
 	# strip out unused nodes
-	queue = [var_to_source_node[var] for var in unused_vars if var.type == GameEffect]
-	used_nodes = []
+	queue = [var.source for var in unused_vars if var.type == GameEffect]
+	used_nodes = set()
 	while queue:
 		node, queue = queue[0], queue[1:]
 		if node not in used_nodes:
-			used_nodes.append(node)
+			used_nodes.add(node)
 			for var in node.args:
-				queue.append(var_to_source_node[var])
+				queue.append(var.source)
 
 	# now that we have all used nodes, let's check that every output from every source is used
 	used_vars = set()
@@ -346,12 +355,11 @@ def attemptCreatePowerGraph():
 	#print [node.__class__.__name__ for node in used_nodes[::-1]]
 	#print "Unused", unused_vars
 	#print "Used", used_vars
-	return PowerGraph(used_nodes[::-1], var_to_source_node)
+	return PowerGraph(used_nodes)
 
 class PowerGraph:
-	def __init__(self, nodes, var_to_source_node):
+	def __init__(self, nodes):
 		self.nodes =  nodes
-		self.var_to_source_node = var_to_source_node
 
 	def description(self):
 		descriptions = []
@@ -376,9 +384,8 @@ class PowerGraph:
 
 		for destination_node in self.nodes:
 			for var in destination_node.args:
-				source_node = self.var_to_source_node[var]
-				if destination_node is not source_node:
-					G.add_edge(labelFromNode[source_node], labelFromNode[destination_node], xlabel=var.type.__name__)
+				if destination_node is not var.source:
+					G.add_edge(labelFromNode[var.source], labelFromNode[destination_node], xlabel=var.type.__name__)
 
 		logger.info("Writing to %s", filename)
 		write_dot(G,'multi.dot')
