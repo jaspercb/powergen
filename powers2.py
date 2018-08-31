@@ -215,10 +215,12 @@ class PathToArea(Node):
 	OUTTYPES = [Area]
 	FORMATSTRINGS = ["a static cloud covering {0}"]
 
+"""
 class DamageLifesteal(Node):
 	INTYPES = [Damage]
 	OUTTYPES = [Damage]
 	FORMATSTRINGS = ["{0} with lifesteal"]
+"""
 
 converter_nodetypes = [
 	PositionToArea,
@@ -230,7 +232,7 @@ converter_nodetypes = [
 	#Transform,
 	CloudFollowingPath,
 	PathToArea,
-	DamageLifesteal,
+	#DamageLifesteal,
 ]
 
 
@@ -305,11 +307,12 @@ def findValidNodeTypes(start_types=universals, end_type=GameEffect, predicate=la
 	suffixcache  = {frozenset([end_type]) : ()} # [Type] -> [NodeType]
 
 	# bias the search to prefer certain nodes
-	random.shuffle(nodetypes)
+	#random.shuffle(nodetypes)
 	def process_forwardq():
 		available_types, nodetypes_prefix = forwardq.get(block=False)
 		if available_types in suffixcache:
-			return
+			yield nodetypes_prefix + suffixcache[available_types]
+
 		def canAddNodeType(nodetype):
 			required_types = Counter(nodetype.INTYPES)
 			return not required_types - Counter(available_types)
@@ -324,17 +327,15 @@ def findValidNodeTypes(start_types=universals, end_type=GameEffect, predicate=la
 				print new_nodetypes_prefix
 				print
 				"""
-				if new_args in suffixcache:
-					return new_nodetypes_prefix + suffixcache[new_args]
-				elif predicate(new_args):
+				if predicate(new_args):
 					forwardq.put((new_args, new_nodetypes_prefix))
 					prefixcache[new_args] = new_nodetypes_prefix
 
 	def process_backwardq():
 		# returns _ if 
 		target_types, nodetypes_suffix = backwardq.get(block=False)
-		if target_types in suffixcache:
-			return
+		if target_types in prefixcache:
+			yield prefixcache[target_types] + nodetypes_suffix
 		def canAddNodeType(nodetype):
 			required_types = Counter(target_types)
 			available_types = Counter(nodetype.OUTTYPES)
@@ -350,18 +351,16 @@ def findValidNodeTypes(start_types=universals, end_type=GameEffect, predicate=la
 				print new_nodetypes_suffix
 				print
 				"""
-				if new_args in prefixcache:
-					return prefixcache[new_args] + new_nodetypes_suffix
-				elif predicate(new_args):
+				if predicate(new_args):
 					backwardq.put((new_args, new_nodetypes_suffix))
 					suffixcache[new_args] = new_nodetypes_suffix
 	while forwardq.qsize() or backwardq.qsize():
 		if forwardq.qsize():
-			out = process_forwardq()
-			if out: yield out
+			for out in process_forwardq():
+				yield out
 		if backwardq.qsize():
-			out = process_backwardq()
-			if out: yield out
+			for out in process_backwardq():
+				yield out
 
 class PowerGraph:
 	def __init__(self, nodes):
