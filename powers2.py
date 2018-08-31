@@ -1,22 +1,28 @@
 """
 DONE
 	* Synthesize DAGs that represent abilities from a set of components
+	* Optimize graph generation to be less "generate a bunch, ignore the bad ones"
+	* Damage modifiers
+		* Lifesteal
 TODO:
-	* Different payoffs
+	* More payoffs
 		* Displaces (pull, push)
+		* %life damage
+		* More status effects
+	* Generate consistent sets of abilities
+		* Elemental palettes
 	* Restrictions on output graphs
 		* Per node restrictions like
 			* Unique in entire graph
 			* Unique in any path
-	* Optimize graph generation to be less "generate a bunch, ignore the bad ones"
-	* Damage modifiers
-		* Lifesteal
-	* Generate consistent sets of abilities
-		* Elemental palettes
 	* Cross-ability interaction
-		* E.g. one ability chills, another ability "pops" it for a freeze
+		* E.g. one ability chills enemies, hitting chilled enemies with another ability freezes them
 		* Probably easier to build into palettes and damage types
-
+		* Still need to theoretically support, though.
+	* Possibly use what I'm going to call "augments" - after generating simple core graphs, add slightly
+	  complicating behavior that DOES NOT CHANGE the graph
+		* This would also be a good way to add stuff like delays and damage modifiers
+		* Also a good way to add cross-ability interaction - e.g. Condition x EntityId -> stronger condition output
 """
 
 
