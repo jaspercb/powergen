@@ -5,6 +5,7 @@ DONE
 	* Damage modifiers
 		* Lifesteal
 TODO:
+	* Investigate whether graph generation would be sped up by maintaining backtrack pointers (space efficiency?)
 	* More payoffs
 		* Displaces (pull, push)
 		* %life damage
@@ -27,7 +28,7 @@ TODO:
 
 
 import random
-from collections import namedtuple, Counter
+from collections import namedtuple, Counter, defaultdict
 
 import logging
 import sys
@@ -303,21 +304,24 @@ def findValidNodeTypes(start_types=universals, end_type=GameEffect, predicate=la
 		return itertools.chain.from_iterable(itertools.combinations(s, r) for r in range(len(s)+1))
 
 	forwardq  = Queue()
-	prefixcache = {} # [Type] -> [NodeType]
+	prefixcache = defaultdict(list) # [Type] -> [[NodeType]]
 	for subset in powerset(start_types):
 		a = [typ for n in subset for typ in n.OUTTYPES]
 		forwardq.put((frozenset(a), tuple(subset)))
-		prefixcache[tuple(a)] = subset
+		prefixcache[tuple(a)].append(subset)
 	backwardq = Queue()
 	backwardq.put((frozenset([end_type]), ()))
-	suffixcache  = {frozenset([end_type]) : ()} # [Type] -> [NodeType]
-
+	suffixcache  = defaultdict(list)
+	suffixcache[frozenset([end_type])].append(())
+	print suffixcache
 	# bias the search to prefer certain nodes
 	#random.shuffle(nodetypes)
 	def process_forwardq():
 		available_types, nodetypes_prefix = forwardq.get(block=False)
 		if available_types in suffixcache:
-			yield nodetypes_prefix + suffixcache[available_types]
+			for nodetypes_suffix in suffixcache[available_types]:
+				print nodetypes_prefix, nodetypes_suffix
+				yield nodetypes_prefix + nodetypes_suffix
 
 		def canAddNodeType(nodetype):
 			required_types = Counter(nodetype.INTYPES)
@@ -335,13 +339,14 @@ def findValidNodeTypes(start_types=universals, end_type=GameEffect, predicate=la
 				"""
 				if predicate(new_args):
 					forwardq.put((new_args, new_nodetypes_prefix))
-					prefixcache[new_args] = new_nodetypes_prefix
+					prefixcache[new_args].append(new_nodetypes_prefix)
 
 	def process_backwardq():
 		# returns _ if 
 		target_types, nodetypes_suffix = backwardq.get(block=False)
 		if target_types in prefixcache:
-			yield prefixcache[target_types] + nodetypes_suffix
+			for nodetypes_prefix in prefixcache[target_types]:
+				yield nodetypes_prefix + nodetypes_suffix
 		def canAddNodeType(nodetype):
 			required_types = Counter(target_types)
 			available_types = Counter(nodetype.OUTTYPES)
@@ -359,7 +364,7 @@ def findValidNodeTypes(start_types=universals, end_type=GameEffect, predicate=la
 				"""
 				if predicate(new_args):
 					backwardq.put((new_args, new_nodetypes_suffix))
-					suffixcache[new_args] = new_nodetypes_suffix
+					suffixcache[new_args].append(new_nodetypes_suffix)
 	while forwardq.qsize() or backwardq.qsize():
 		if forwardq.qsize():
 			for out in process_forwardq():
