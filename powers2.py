@@ -1,29 +1,30 @@
 """
 DONE
-	* Synthesize DAGs that represent abilities from a set of components
-	* Optimize graph generation to be less "generate a bunch, ignore the bad ones"
-	* Damage modifiers
-		* Lifesteal
+    * Synthesize DAGs that represent abilities from a set of components
+    * Optimize graph generation to be less "generate a bunch, ignore the bad ones"
+    * Damage modifiers
+        * Lifesteal
 TODO:
-	* Investigate whether graph generation would be sped up by maintaining backtrack pointers (space efficiency?)
-	* More payoffs
-		* Displaces (pull, push)
-		* %life damage
-		* More status effects
-	* Generate consistent sets of abilities
-		* Elemental palettes
-	* Restrictions on output graphs
-		* Per node restrictions like
-			* Unique in entire graph
-			* Unique in any path
-	* Cross-ability interaction
-		* E.g. one ability chills enemies, hitting chilled enemies with another ability freezes them
-		* Probably easier to build into palettes and damage types
-		* Still need to theoretically support, though.
-	* Possibly use what I'm going to call "augments" - after generating simple core graphs, add slightly
-	  complicating behavior that DOES NOT CHANGE the graph
-		* This would also be a good way to add stuff like delays and damage modifiers
-		* Also a good way to add cross-ability interaction - e.g. Condition x EntityId -> stronger condition output
+    * Investigate whether graph generation would be sped up by maintaining backtrack pointers (space efficiency?)
+    * More payoffs
+        * Displaces (pull, push)
+        * %life damage
+        * More status effects
+    * Generate consistent sets of abilities
+        * Elemental palettes
+    * Restrictions on output graphs
+        * Per node restrictions like
+            * Unique in entire graph
+            * Unique in any path
+    * Cross-ability interaction
+        * E.g. hitting chills enemies, hitting chilled enemies freezes them
+        * Probably easier to build into palettes and damage types
+        * Still need to theoretically support, though.
+    * Possibly use what I'm going to call "augments" - after generating simple
+      core graphs, add slightly complicating behavior that DOES NOT CHANGE the graph
+        * This would also be a good way to add stuff like delays and damage modifiers
+        * Also a good way to add cross-ability interaction
+            * e.g. Condition x EntityId -> stronger condition output
 """
 
 
@@ -32,23 +33,19 @@ import random
 import logging
 import sys
 import itertools
-import networkx as nx
-from collections import namedtuple, Counter, defaultdict
-from multiset import FrozenMultiset
-from networkx.drawing.nx_pydot import write_dot
+from collections import namedtuple, defaultdict
 from Queue import Queue
+import networkx as nx
+from networkx.drawing.nx_pydot import write_dot
+from multiset import FrozenMultiset
 
-"""
 
-"""
-
-
-class TypedValue:
+class TypedValue(object):
     def __init__(self, typ, description):
         self.type = typ
         self.description = description
         self.source = None  # will be set in Node constructor
-        self.destination = None  # will be set, uh, eventually
+        self.destination = None  # will be set, uh, eventually #TODO
 
     def __repr__(self):
         return 'TypedValue(type={0}, value={1})'.format(
@@ -236,14 +233,14 @@ class DirectionToProjectile(Node):
 
 """
 class DelayArea(Node):
-	INTYPES = [Area]
-	OUTTYPES = [Area]
-	FORMATSTRINGS = ["delayed {0}"]
+    INTYPES = [Area]
+    OUTTYPES = [Area]
+    FORMATSTRINGS = ["delayed {0}"]
 
 class Transform(Node):
-	INTYPES = [Bool]
-	OUTTYPES = [Area, InputKey]
-	FORMATSTRINGS = ["transform into a {0}", "idk"]
+    INTYPES = [Bool]
+    OUTTYPES = [Area, InputKey]
+    FORMATSTRINGS = ["transform into a {0}", "idk"]
 """
 
 
@@ -268,9 +265,9 @@ class PositionDirectionFloatToArea(Node):
 
 """
 class DamageLifesteal(Node):
-	INTYPES = [Damage]
-	OUTTYPES = [Damage]
-	FORMATSTRINGS = ["{0} with lifesteal"]
+    INTYPES = [Damage]
+    OUTTYPES = [Damage]
+    FORMATSTRINGS = ["{0} with lifesteal"]
 """
 
 CONVERTER_NODETYPES = [
@@ -346,7 +343,7 @@ for name in dir():
         pass
 
 
-def findValidNodeTypes(
+def generate_valid_topsorted_nodetype_dags(
         start_types=UNIVERSALS,
         end_type=GameEffect,
         predicate=lambda types: len(types) < 4):
@@ -427,8 +424,8 @@ class PowerGraph(object):
     def __init__(self, nodes):
         self.nodes = nodes
 
-    @staticmethod
-    def FromListOfNodeTypes(nodetypes):
+    @classmethod
+    def from_list_of_node_types(cls, nodetypes):
         print nodetypes
         nodes = set()  # [Node]
         unused_vars = set()  # [TypedVar]
@@ -449,7 +446,7 @@ class PowerGraph(object):
 
         for nodetype in nodetypes:
             add_nodetype(nodetype)
-        return PowerGraph(nodes)
+        return cls(nodes)
 
     def description(self):
         descriptions = []
@@ -461,40 +458,44 @@ class PowerGraph(object):
 
     def render_to_file(self, filename):
         count = 0
-        G = nx.MultiDiGraph()
+        digraph = nx.MultiDiGraph()
         label_from_node = {}
         for node in self.nodes:
             name = node.__class__.__name__ + str(count)
             count += 1
             label_from_node[node] = name
-            G.add_node(name)
+            digraph.add_node(name)
 
         for destination_node in self.nodes:
             for var in destination_node.args:
                 if destination_node is not var.source:
-                    G.add_edge(label_from_node[var.source],
-                               label_from_node[destination_node],
-                               xlabel=var.type.__name__)
+                    digraph.add_edge(label_from_node[var.source],
+                                     label_from_node[destination_node],
+                                     xlabel=var.type.__name__)
 
         LOGGER.info("Writing to %s", filename)
-        write_dot(G, 'multi.dot')
+        write_dot(digraph, 'multi.dot')
 
         os.system(
             """C:/"Program Files (x86)"/Graphviz2.38/bin/dot.exe -Nshape=box -T png multi.dot > {0}""".format(filename))
         os.remove("multi.dot")
 
 
-if __name__ == "__main__":
+def main():
     LOGGER.setLevel(logging.INFO)
 
-    generator = findValidNodeTypes()
+    generator = generate_valid_topsorted_nodetype_dags()
     i = 0
     for nodetypeslist in generator:
         if InKey in nodetypeslist:
-            PowerGraph.FromListOfNodeTypes(nodetypeslist).render_to_file(
+            PowerGraph.from_list_of_node_types(nodetypeslist).render_to_file(
                 "out/power{0}.png".format(i))
             i += 1
 
     def must_contain_nodetype(nodetype):
         return lambda graph: any(isinstance(node, nodetype)
                                  for node in graph.nodes)
+
+
+if __name__ == "__main__":
+    main()
