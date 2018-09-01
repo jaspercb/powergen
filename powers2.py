@@ -29,7 +29,7 @@ TODO:
 
 import random
 from collections import namedtuple, Counter, defaultdict
-
+from multiset import FrozenMultiset
 import logging
 import sys
 import itertools
@@ -113,16 +113,23 @@ class InKey(Node):
 
 universals = [
 	ConstantFloat,
+	ConstantFloat,
+	ConstantFloat,
 	OwningEntity,
 	InKey
 ]
 
 # INPUTS
 
-class InputClick(Node):
+class InputClickPosition(Node):
 	INTYPES = [InputKey]
 	OUTTYPES = [Position]
 	FORMATSTRINGS = ["where the user clicked"]
+
+class InputClickDirection(Node):
+	INTYPES = [InputKey]
+	OUTTYPES = [Direction]
+	FORMATSTRINGS = ["the direction of the user's click"]
 
 class InputPerpendicularLine(Node):
 	INTYPES = [InputKey]
@@ -166,7 +173,8 @@ class InputToggle(Node):
 	FORMATSTRINGS = ["a toggle is held"]
 
 input_nodetypes = [
-	InputClick,
+	InputClickPosition,
+	InputClickDirection,
 	InputPerpendicularLine,
 	InputClickDragReleaseDirection,
 	InputClickCharge,
@@ -222,6 +230,11 @@ class PathToArea(Node):
 	OUTTYPES = [Area]
 	FORMATSTRINGS = ["a static cloud covering {0}"]
 
+class PositionDirectionFloatToArea(Node):
+	INTYPES = [Position, Direction, float]
+	OUTTYPES = [Area]
+	FORMATSTRINGS = ["a rectangle starting at {0}, moving towards {1}, of length {2}"]
+
 """
 class DamageLifesteal(Node):
 	INTYPES = [Damage]
@@ -239,6 +252,7 @@ converter_nodetypes = [
 	#Transform,
 	CloudFollowingPath,
 	PathToArea,
+	PositionDirectionFloatToArea,
 	#DamageLifesteal,
 ]
 
@@ -307,61 +321,46 @@ def findValidNodeTypes(start_types=universals, end_type=GameEffect, predicate=la
 	prefixcache = defaultdict(list) # [Type] -> [[NodeType]]
 	for subset in powerset(start_types):
 		a = [typ for n in subset for typ in n.OUTTYPES]
-		forwardq.put((frozenset(a), tuple(subset)))
-		prefixcache[tuple(a)].append(subset)
+		forwardq.put((FrozenMultiset(a), tuple(subset)))
+		prefixcache[FrozenMultiset(a)].append(subset)
 	backwardq = Queue()
-	backwardq.put((frozenset([end_type]), ()))
+	backwardq.put((FrozenMultiset([end_type]), ()))
 	suffixcache  = defaultdict(list)
-	suffixcache[frozenset([end_type])].append(())
-	print suffixcache
+	suffixcache[FrozenMultiset([end_type])].append(())
 	# bias the search to prefer certain nodes
-	#random.shuffle(nodetypes)
+	# random.shuffle(nodetypes)
 	def process_forwardq():
 		available_types, nodetypes_prefix = forwardq.get(block=False)
 		if available_types in suffixcache:
 			for nodetypes_suffix in suffixcache[available_types]:
-				print nodetypes_prefix, nodetypes_suffix
 				yield nodetypes_prefix + nodetypes_suffix
 
 		def canAddNodeType(nodetype):
-			required_types = Counter(nodetype.INTYPES)
-			return not required_types - Counter(available_types)
+			required_types = FrozenMultiset(nodetype.INTYPES)
+			return required_types.issubset(available_types)
 
 		for nodetype in nodetypes:
 			if canAddNodeType(nodetype):
-				new_args = (available_types - frozenset(nodetype.INTYPES)) | frozenset(nodetype.OUTTYPES)
+				new_args = (available_types - FrozenMultiset(nodetype.INTYPES)) + FrozenMultiset(nodetype.OUTTYPES)
 				new_nodetypes_prefix = nodetypes_prefix + (nodetype,)
-				"""
-				print "forward"
-				print new_args
-				print new_nodetypes_prefix
-				print
-				"""
 				if predicate(new_args):
 					forwardq.put((new_args, new_nodetypes_prefix))
 					prefixcache[new_args].append(new_nodetypes_prefix)
 
 	def process_backwardq():
-		# returns _ if 
 		target_types, nodetypes_suffix = backwardq.get(block=False)
 		if target_types in prefixcache:
 			for nodetypes_prefix in prefixcache[target_types]:
 				yield nodetypes_prefix + nodetypes_suffix
+
 		def canAddNodeType(nodetype):
-			required_types = Counter(target_types)
-			available_types = Counter(nodetype.OUTTYPES)
-			return not required_types - available_types	
+			output_types = FrozenMultiset(nodetype.OUTTYPES)
+			return output_types.issubset(target_types)
 
 		for nodetype in nodetypes:
 			if canAddNodeType(nodetype):
-				new_args = (target_types - frozenset(nodetype.OUTTYPES)) | frozenset(nodetype.INTYPES)
+				new_args = (target_types - FrozenMultiset(nodetype.OUTTYPES)) + FrozenMultiset(nodetype.INTYPES)
 				new_nodetypes_suffix = (nodetype,) + nodetypes_suffix
-				"""
-				print "back"
-				print new_args
-				print new_nodetypes_suffix
-				print
-				"""
 				if predicate(new_args):
 					backwardq.put((new_args, new_nodetypes_suffix))
 					suffixcache[new_args].append(new_nodetypes_suffix)
@@ -379,6 +378,7 @@ class PowerGraph:
 
 	@staticmethod
 	def FromListOfNodeTypes(nodetypes):
+		print nodetypes
 		nodes = set() # [Node]
 		unused_vars = set() # [TypedVar]
 		used_vars = set()
@@ -452,9 +452,9 @@ if __name__ == "__main__":
 	generator = findValidNodeTypes()
 	i = 0
 	for nodetypeslist in generator:
-		PowerGraph.FromListOfNodeTypes(nodetypeslist).renderToFile("out/power{0}.png".format(i))
-		i += 1
-		print nodetypeslist
+		if InKey in nodetypeslist:
+			PowerGraph.FromListOfNodeTypes(nodetypeslist).renderToFile("out/power{0}.png".format(i))
+			i += 1
 
 	def mustContainNode(nodetype):
 		return lambda graph: any(isinstance(node, nodetype) for node in graph.nodes)
