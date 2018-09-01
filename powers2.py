@@ -331,14 +331,14 @@ NODETYPES = INPUT_NODETYPES + CONVERTER_NODETYPES + GAME_EFFECTS
 # bad bad bad code
 # will error if there's any Node subclass that isn't in `nodetypes` or
 # `universals`
-for name in dir():
-    obj = eval(name)
+for objname in dir():
+    obj = eval(objname)
     try:
-        if name != "Node" and issubclass(
+        if objname != "Node" and issubclass(
                 obj, Node) and obj not in NODETYPES and obj not in UNIVERSALS:
             raise ValueError(
-                "expected to see {name} in NODETYPES".format(
-                    name=name))
+                "expected to see {objname} in NODETYPES".format(
+                    objname=objname))
     except TypeError:
         pass
 
@@ -351,6 +351,9 @@ def generate_valid_topsorted_nodetype_dags(
     A given vertex in the search has two components
             * A set of "unused types" - corresponding to missing sinks if searching forward, sources if backward
             * The order in which we added edges - a prefix if searching forward, a suffix if searching backward
+
+    TODO: optimization: since many nodes have the same type signature, we can generate templated outputs,
+          then replace templates with particular nodetypes with a matching type signature
     """
 
     def powerset(iterable):
@@ -361,6 +364,7 @@ def generate_valid_topsorted_nodetype_dags(
                 s, r) for r in range(
                 len(s) + 1))
 
+    previously_output = set()
     forwardq = Queue()
     prefixcache = defaultdict(list)  # [Type] -> [[NodeType]]
     for subset in powerset(start_types):
@@ -378,7 +382,11 @@ def generate_valid_topsorted_nodetype_dags(
         available_types, nodetypes_prefix = forwardq.get(block=False)
         if available_types in suffixcache:
             for nodetypes_suffix in suffixcache[available_types]:
-                yield nodetypes_prefix + nodetypes_suffix
+                entire_nodetypes = tuple(nodetypes_prefix + nodetypes_suffix)
+                if entire_nodetypes not in previously_output:
+                    previously_output.add(entire_nodetypes)
+                    yield entire_nodetypes
+
 
         def can_add_nodetype(nodetype):
             required_types = FrozenMultiset(nodetype.INTYPES)
@@ -397,7 +405,10 @@ def generate_valid_topsorted_nodetype_dags(
         target_types, nodetypes_suffix = backwardq.get(block=False)
         if target_types in prefixcache:
             for nodetypes_prefix in prefixcache[target_types]:
-                yield nodetypes_prefix + nodetypes_suffix
+                entire_nodetypes = tuple(nodetypes_prefix + nodetypes_suffix)
+                if entire_nodetypes not in previously_output:
+                    previously_output.add(entire_nodetypes)
+                    yield entire_nodetypes
 
         def can_add_nodetype(nodetype):
             output_types = FrozenMultiset(nodetype.OUTTYPES)
