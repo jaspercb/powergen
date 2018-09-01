@@ -29,7 +29,6 @@ TODO:
 
 
 import os
-import random
 import logging
 import sys
 import itertools
@@ -45,7 +44,7 @@ class TypedValue(object):
         self.type = typ
         self.description = description
         self.source = None  # will be set in Node constructor
-        self.destination = None  # will be set, uh, eventually #TODO
+        # self.destination = None  # will be set, uh, eventually?
 
     def __repr__(self):
         return 'TypedValue(type={0}, value={1})'.format(
@@ -387,7 +386,6 @@ def generate_valid_topsorted_nodetype_dags(
                     previously_output.add(entire_nodetypes)
                     yield entire_nodetypes
 
-
         def can_add_nodetype(nodetype):
             required_types = FrozenMultiset(nodetype.INTYPES)
             return required_types.issubset(available_types)
@@ -436,30 +434,39 @@ class PowerGraph(object):
         self.nodes = nodes
 
     @classmethod
-    # returns a list of nodetypes
-    # this code is utterly unreadable by overuse of the list monad, but it's just a bunch of flatmaps
+    """
+    Generate all PowerGraph objects from a list of nodetypes using different argument ordering choices
+
+    Since a given topsorted list of nodetypes does not uniquely specify a
+    power if at any point there are two available variables of a given type,
+    this function just generates all of them, Every single combination.
+    For example, if TypeA is a node from () => (float, float) and TypeB is a node from (float, float) => ()
+    this function will yield both possible result graphs
+    """
     def from_list_of_node_types(cls, nodetypes):
-        def bind(x, f):
-            return [j for i in x for j in f(i)]
+        def flatmap(f, l):
+            return [j for i in l for j in f(i)]
 
         # nodes, unused vars
         state = [(frozenset(), frozenset())]
 
         for nodetype in nodetypes:
-            def add_nodetype((nodes, unused_vars)):
+            def add_nodetype(state, captured_nodetype=nodetype):
+                (nodes, unused_vars) = state
                 consumed_argsets = [((), unused_vars)]
-                for intype in nodetype.INTYPES:
-                    def selectOneArg((prev_used_vars, inner_unused_vars)):
+                for intype in captured_nodetype.INTYPES:
+                    def select_one_arg(state1, captured_intype=intype):
+                        (prev_used_vars, inner_unused_vars) = state1
                         for var in inner_unused_vars:
-                            if var.type == intype:
+                            if var.type == captured_intype:
                                 yield (prev_used_vars + (var,), inner_unused_vars - frozenset([var]))
 
-                    consumed_argsets = bind(consumed_argsets, selectOneArg)
+                    consumed_argsets = flatmap(select_one_arg, consumed_argsets)
                 for (used_vars, inner_unused_vars) in consumed_argsets:
-                    node = nodetype(*used_vars)
+                    node = captured_nodetype(*used_vars)
                     yield (nodes | frozenset([node]), (inner_unused_vars | frozenset(node.out)))
 
-            state = bind(state, add_nodetype)
+            state = flatmap(add_nodetype, state)
 
         return (cls(nodes) for (nodes, _) in state)
 
