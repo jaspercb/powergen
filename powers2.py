@@ -436,28 +436,32 @@ class PowerGraph(object):
         self.nodes = nodes
 
     @classmethod
+    # returns a list of nodetypes
+    # this code is utterly unreadable by overuse of the list monad, but it's just a bunch of flatmaps
     def from_list_of_node_types(cls, nodetypes):
-        print nodetypes
-        nodes = set()  # [Node]
-        unused_vars = set()  # [TypedVar]
-        used_vars = set()
+        def bind(x, f):
+            return [j for i in x for j in f(i)]
 
-        def add_nodetype(nodetype):
-            args = []
-            for intype in nodetype.INTYPES:
-                arg = random.choice(
-                    [v for v in unused_vars if v.type == intype])
-                unused_vars.remove(arg)
-                used_vars.add(arg)
-                args.append(arg)
-            node = nodetype(*args)
-            nodes.add(node)
-            for outvar in node.out:
-                unused_vars.add(outvar)
+        # nodes, unused vars
+        state = [(frozenset(), frozenset())]
 
         for nodetype in nodetypes:
-            add_nodetype(nodetype)
-        return cls(nodes)
+            def add_nodetype((nodes, unused_vars)):
+                consumed_argsets = [((), unused_vars)]
+                for intype in nodetype.INTYPES:
+                    def selectOneArg((prev_used_vars, inner_unused_vars)):
+                        for var in inner_unused_vars:
+                            if var.type == intype:
+                                yield (prev_used_vars + (var,), inner_unused_vars - frozenset([var]))
+
+                    consumed_argsets = bind(consumed_argsets, selectOneArg)
+                for (used_vars, inner_unused_vars) in consumed_argsets:
+                    node = nodetype(*used_vars)
+                    yield (nodes | frozenset([node]), (inner_unused_vars | frozenset(node.out)))
+
+            state = bind(state, add_nodetype)
+
+        return (cls(nodes) for (nodes, _) in state)
 
     def description(self):
         descriptions = []
@@ -499,9 +503,10 @@ def main():
     i = 0
     for nodetypeslist in generator:
         if InKey in nodetypeslist:
-            PowerGraph.from_list_of_node_types(nodetypeslist).render_to_file(
-                "out/power{0}.png".format(i))
-            i += 1
+            for pg in PowerGraph.from_list_of_node_types(nodetypeslist):
+                pg.render_to_file(
+                    "out/power{0}.png".format(i))
+                i += 1
 
     def must_contain_nodetype(nodetype):
         return lambda graph: any(isinstance(node, nodetype)
