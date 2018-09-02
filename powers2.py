@@ -25,6 +25,13 @@ TODO:
         * This would also be a good way to add stuff like delays and damage modifiers
         * Also a good way to add cross-ability interaction
             * e.g. Condition x EntityId -> stronger condition output
+
+    * When generating ability node types, some orderings can be more "general" than others
+        * E.g. Input -> Float,  () -> Float, Float -> Intermediate, Intermediate * Float -> Final
+            * If we add () -> Float after Float -> Intermediate there are ungenerateable combinations
+            * To fix, we add a restriction to "can we add this node"
+                * If a previous node has consumed an X, we can't add a node that produces an X
+                  unless it could plausibly depend somehow on that previous node
 """
 
 
@@ -37,6 +44,19 @@ from Queue import Queue
 import networkx as nx
 from networkx.drawing.nx_pydot import write_dot
 from multiset import FrozenMultiset
+
+
+# Config vars
+MAX_ENDTYPES = 2
+
+
+def powerset(iterable):
+    "powerset([1,2,3]) --> () (1,) (2,) (3,) (1,2) (1,3) (2,3) (1,2,3)"
+    s = list(iterable)
+    return itertools.chain.from_iterable(
+        itertools.combinations(
+            s, r) for r in range(
+            len(s) + 1))
 
 
 class TypedValue(object):
@@ -96,138 +116,125 @@ class Node(object):
         return [var.description for var in self.out]
 
 
-# UNIVERSALS (things you always have access to)
-
-class ConstantFloat(Node):
-    INTYPES = []
-    OUTTYPES = [float]
-    FORMATSTRINGS = ["$CONSTANT"]
-
-
-class OwningEntity(Node):
-    INTYPES = []
-    OUTTYPES = [EntityId]
-    FORMATSTRINGS = ["the user's character"]
-
-
-class InKey(Node):
-    INTYPES = []
-    OUTTYPES = [InputKey]
-    FORMATSTRINGS = [""]
+def CreateNodeType(
+        nodename,
+        intypes,
+        outtypes,
+        formatstrings,
+        optionalintypes=[]):
+    for i, opttypesubset in enumerate(powerset(optionalintypes)):
+        actualnodename = nodename + str(i)
+        typ = type(actualnodename,
+                   (Node,
+                    ),
+                   {"INTYPES": tuple(intypes) + opttypesubset,
+                    "OUTTYPES": tuple(outtypes),
+                    "FORMATSTRINGS": formatstrings})
+        yield typ
 
 
-UNIVERSALS = [
-    ConstantFloat,
-    ConstantFloat,
-    ConstantFloat,
-    OwningEntity,
-    InKey
-]
+UNIVERSALS = itertools.chain(
+    CreateNodeType(
+        "ConstantFloat",
+        intypes=[],
+        outtypes=[float],
+        formatstrings=["$CONSTANT"]),
+    CreateNodeType(
+        "OwningEntity",
+        intypes=[],
+        outtypes=[EntityId],
+        formatstrings=["the user's character"]),
+    CreateNodeType(
+        "InKey",
+        intypes=[],
+        outtypes=[InputKey],
+        formatstrings=[""]),
+)
 
 # INPUTS
 
 
-class InputClickPosition(Node):
-    INTYPES = [InputKey]
-    OUTTYPES = [Position]
-    FORMATSTRINGS = ["where the user clicked"]
-
-
-class InputClickDirection(Node):
-    INTYPES = [InputKey]
-    OUTTYPES = [Direction]
-    FORMATSTRINGS = ["the direction of the user's click"]
-
-
-class InputPerpendicularLine(Node):
-    INTYPES = [InputKey]
-    OUTTYPES = [SimplePath]
-    FORMATSTRINGS = ["a line perpendicular to the player"]
-
-
-class InputClickDragReleaseDirection(Node):
-    INTYPES = [InputKey]
-    OUTTYPES = [Position, Direction]
-    FORMATSTRINGS = [
+ALL_NODETYPES = list(itertools.chain(
+    CreateNodeType("InputClickPosition", intypes=[InputKey], outtypes=[
+                   Position], formatstrings=["where the user clicked"]),
+    CreateNodeType(
+        "InputClickDirection",
+        intypes=[InputKey],
+        outtypes=[Direction],
+        formatstrings=["the direction of the user's click"]),
+    CreateNodeType(
+        "InputPerpendicularLine",
+        intypes=[InputKey],
+        outtypes=[
+            SimplePath],
+        formatstrings=["a line perpendicular to the player"]),
+    CreateNodeType("InputClickDragReleaseDirection", intypes=[InputKey], outtypes=[Position, Direction], formatstrings=[
         "where the user clicked",
-        "where the mouse moved before releasing"
-    ]
-
-
-class InputClickCharge(Node):
-    INTYPES = [InputKey]
-    OUTTYPES = [Position, float]
-    FORMATSTRINGS = [
+        "where the mouse moved before releasing"]),
+    CreateNodeType("InputClickCharge", intypes=[InputKey], outtypes=[Position, float], formatstrings=[
         "where the user clicked and held",
-        "proportional to how long the user held the mouse for"
-    ]
-
-
-class InputPlaceMines(Node):
-    INTYPES = [InputKey]
-    OUTTYPES = [Position, float]
-    FORMATSTRINGS = [
+        "proportional to how long the user held the mouse for"]),
+    CreateNodeType("InputPlaceMines", intypes=[InputKey], outtypes=[Position, float], formatstrings=[
         "where the mines were placed",
-        "proportional to how long the mines charged before detonation"
-    ]
-
-
-class InputUnitTargetEnemy(Node):
-    INTYPES = [InputKey]
-    OUTTYPES = [EnemyEntityId]
-    FORMATSTRINGS = [
+        "proportional to how long the mines charged before detonation"]),
+    CreateNodeType("InputUnitTargetEnemy", intypes=[InputKey], outtypes=[EnemyEntityId], formatstrings=[
         "the clicked enemy",
-    ]
-
-
-class InputToggle(Node):
-    INTYPES = [InputKey]
-    OUTTYPES = [Bool]
-    FORMATSTRINGS = ["a toggle is held"]
-
-
-INPUT_NODETYPES = [
-    InputClickPosition,
-    InputClickDirection,
-    InputPerpendicularLine,
-    InputClickDragReleaseDirection,
-    InputClickCharge,
-    InputPlaceMines,
-    InputToggle,
-    InputUnitTargetEnemy
-]
-
-# CONVERTER_NODETYPES
-
-
-class PositionToArea(Node):
-    INTYPES = [Position, float]
-    OUTTYPES = [Area]
-    FORMATSTRINGS = ["a circle centered on {0} with radius {1}"]
-
-
-class TimeBoolToRandomDirection(Node):
-    INTYPES = [Bool]
-    OUTTYPES = [Direction]
-    FORMATSTRINGS = ["random directions when {0}"]
-
-
-class PositionFromEntity(Node):
-    INTYPES = [EntityId]
-    OUTTYPES = [Position]
-    FORMATSTRINGS = ["the Position of {0}"]
-
-
-class EntitiesInArea(Node):
-    INTYPES = [Area]
-    OUTTYPES = [EnemyEntityId]
-    FORMATSTRINGS = ["entities in {0}"]
-
-
-class DirectionToProjectile(Node):
-    INTYPES = [Direction]
-    OUTTYPES = [EnemyEntityId]
-    FORMATSTRINGS = ["enemies hit by projectiles emitted towards {0}"]
+    ]),
+    CreateNodeType(
+        "InputUnitTargetEnemy",
+        intypes=[InputKey],
+        outtypes=[Bool],
+        formatstrings=["a toggle is held"]),
+    # Converters
+    CreateNodeType("PositionToArea", intypes=[Position], optionalintypes=[float], outtypes=[
+                   Area], formatstrings=["a circle centered on {0} with radius {1}"]),
+    CreateNodeType("TimeBoolToRandomDirection", intypes=[Bool], outtypes=[
+                   Direction], formatstrings=["random directions when {0}"]),
+    CreateNodeType(
+        "PositionFromEntity",
+        intypes=[EntityId],
+        outtypes=[Position],
+        formatstrings=["the position of {0}"]),
+    CreateNodeType(
+        "EntitiesInArea",
+        intypes=[Area],
+        outtypes=[EnemyEntityId],
+        formatstrings=["enemy entities in {0}"]),
+    CreateNodeType(
+        "DirectionToProjectile",
+        intypes=[Direction],
+        outtypes=[EnemyEntityId],
+        formatstrings=["enemies hit by projectiles emitted towards {0}"]),
+    CreateNodeType("CloudFollowingPath", intypes=[SimplePath], outtypes=[
+                   Area], formatstrings=["a cloud that moves along {0}"]),
+    CreateNodeType("PathToArea", intypes=[SimplePath], outtypes=[
+                   Area], formatstrings=["a static cloud covering {0}"]),
+    CreateNodeType(
+        "PositionDirectionFloatToArea",
+        intypes=[
+            Position,
+            Direction,
+            float],
+        outtypes=[Area],
+        formatstrings=["a rectangle starting at {0}, moving towards {1}, of length {2}"]),
+    # GameEffects
+    CreateNodeType("AddDamageOnEntity", intypes=[EnemyEntityId], optionalintypes=[float], outtypes=[
+                   Damage], formatstrings=["Deal damage scaling with {1} to {0}"]),
+    CreateNodeType("ConditionOnEntity", intypes=[EnemyEntityId], optionalintypes=[float], outtypes=[
+                   GameEffect], formatstrings=["Inflict a condition on {0} with intensity {1}"]),
+    CreateNodeType("TeleportPlayer", intypes=[EntityId, Position], outtypes=[
+                   GameEffect], formatstrings=["Teleports {0} to {1}"]),
+    CreateNodeType(
+        "Wall",
+        intypes=[SimplePath],
+        outtypes=[GameEffect],
+        formatstrings=["A wall following {0}"]),
+    CreateNodeType(
+        "TerminateDamage",
+        intypes=[Damage],
+        outtypes=[GameEffect],
+        formatstrings=["{0}"]),
+))
 
 
 """
@@ -242,26 +249,6 @@ class Transform(Node):
     FORMATSTRINGS = ["transform into a {0}", "idk"]
 """
 
-
-class CloudFollowingPath(Node):
-    INTYPES = [SimplePath]
-    OUTTYPES = [Area]
-    FORMATSTRINGS = ["a cloud that moves along {0}"]
-
-
-class PathToArea(Node):
-    INTYPES = [SimplePath]
-    OUTTYPES = [Area]
-    FORMATSTRINGS = ["a static cloud covering {0}"]
-
-
-class PositionDirectionFloatToArea(Node):
-    INTYPES = [Position, Direction, float]
-    OUTTYPES = [Area]
-    FORMATSTRINGS = [
-        "a rectangle starting at {0}, moving towards {1}, of length {2}"]
-
-
 """
 class DamageLifesteal(Node):
     INTYPES = [Damage]
@@ -269,62 +256,7 @@ class DamageLifesteal(Node):
     FORMATSTRINGS = ["{0} with lifesteal"]
 """
 
-CONVERTER_NODETYPES = [
-    PositionToArea,
-    TimeBoolToRandomDirection,
-    PositionFromEntity,
-    EntitiesInArea,
-    DirectionToProjectile,
-    # DelayArea,
-    # Transform,
-    CloudFollowingPath,
-    PathToArea,
-    PositionDirectionFloatToArea,
-    # DamageLifesteal,
-]
-
-
 # GAME EFFECTS
-
-class AddDamageOnEntity(Node):
-    INTYPES = [EnemyEntityId, float]
-    OUTTYPES = [Damage]
-    FORMATSTRINGS = ["Deal damage scaling with {1} to {0}"]
-
-
-class ConditionOnEntity(Node):
-    INTYPES = [EnemyEntityId, float]
-    OUTTYPES = [GameEffect]
-    FORMATSTRINGS = ["Inflict a condition on {0} with intensity {1}"]
-
-
-class TeleportPlayer(Node):
-    INTYPES = [EntityId, Position]
-    OUTTYPES = [GameEffect]
-    FORMATSTRINGS = ["Teleport {0} to {1}"]
-
-
-class Wall(Node):
-    INTYPES = [SimplePath]
-    OUTTYPES = [GameEffect]
-    FORMATSTRINGS = ["A wall following {0}"]
-
-
-class TerminateDamage(Node):
-    INTYPES = [Damage]
-    OUTTYPES = [GameEffect]
-    FORMATSTRINGS = ["{0}"]
-
-
-GAME_EFFECTS = [
-    AddDamageOnEntity,
-    ConditionOnEntity,
-    TeleportPlayer,
-    Wall,
-    TerminateDamage
-]
-
-ALL_NODETYPES = INPUT_NODETYPES + CONVERTER_NODETYPES + GAME_EFFECTS
 
 # bad code
 # bad bad bad code
@@ -341,10 +273,11 @@ for objname in dir():
     except TypeError:
         pass
 
+
 def generate_valid_topsorted_nodetype_dags(
         start_types=UNIVERSALS,
         end_type=GameEffect,
-        predicate=lambda types: len(types) < 5):
+        predicate=lambda types: len(types) < 3):
     """Generator function that performs a bidirectional BFS, searching forward from InputType and backward from GameEffect.
     A given vertex in the search has two components
             * A set of "unused types" - corresponding to missing sinks if searching forward, sources if backward
@@ -354,27 +287,18 @@ def generate_valid_topsorted_nodetype_dags(
           then replace templates with particular nodetypes with a matching type signature
     """
 
-    def powerset(iterable):
-        "powerset([1,2,3]) --> () (1,) (2,) (3,) (1,2) (1,3) (2,3) (1,2,3)"
-        s = list(iterable)
-        return itertools.chain.from_iterable(
-            itertools.combinations(
-                s, r) for r in range(
-                len(s) + 1))
-
     previously_output = set()
     forwardq = Queue()
     prefixcache = defaultdict(list)  # [Type] -> [[NodeType]]
     for subset in powerset(start_types):
         # flatten available types
-        a = [typ for n in subset for typ in n.OUTTYPES]
-        forwardq.put((FrozenMultiset(a), tuple(subset)))
-        prefixcache[FrozenMultiset(a)].append(subset)
+        typeset = FrozenMultiset([typ for n in subset for typ in n.OUTTYPES])
+        forwardq.put((typeset, tuple(subset)))
+        prefixcache[typeset].append(subset)
     backwardq = Queue()
 
     suffixcache = defaultdict(list)
-    n_endtypes = 2
-    for i in range(1, n_endtypes+1):
+    for i in range(1, MAX_ENDTYPES + 1):
         typeset = FrozenMultiset([end_type] * i)
         backwardq.put((typeset, ()))
         suffixcache[typeset].append(())
@@ -465,7 +389,8 @@ class PowerGraph(object):
                             if var.type == captured_intype:
                                 yield (prev_used_vars + (var,), inner_unused_vars - frozenset([var]))
 
-                    consumed_argsets = flatmap(select_one_arg, consumed_argsets)
+                    consumed_argsets = flatmap(
+                        select_one_arg, consumed_argsets)
                 for (used_vars, inner_unused_vars) in consumed_argsets:
                     node = captured_nodetype(*used_vars)
                     yield (nodes | frozenset([node]), (inner_unused_vars | frozenset(node.out)))
@@ -513,11 +438,10 @@ def main():
     generator = generate_valid_topsorted_nodetype_dags()
     i = 0
     for nodetypeslist in generator:
-        if InKey in nodetypeslist:
-            for pg in PowerGraph.from_list_of_node_types(nodetypeslist):
-                pg.render_to_file(
-                    "out/power{0}.png".format(i))
-                i += 1
+        for pg in PowerGraph.from_list_of_node_types(nodetypeslist):
+            pg.render_to_file(
+                "out/power{0}.png".format(i))
+            i += 1
 
     def must_contain_nodetype(nodetype):
         return lambda graph: any(isinstance(node, nodetype)
