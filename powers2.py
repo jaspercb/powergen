@@ -324,7 +324,7 @@ GAME_EFFECTS = [
     TerminateDamage
 ]
 
-NODETYPES = INPUT_NODETYPES + CONVERTER_NODETYPES + GAME_EFFECTS
+ALL_NODETYPES = INPUT_NODETYPES + CONVERTER_NODETYPES + GAME_EFFECTS
 
 # bad code
 # bad bad bad code
@@ -334,18 +334,17 @@ for objname in dir():
     obj = eval(objname)
     try:
         if objname != "Node" and issubclass(
-                obj, Node) and obj not in NODETYPES and obj not in UNIVERSALS:
+                obj, Node) and obj not in ALL_NODETYPES and obj not in UNIVERSALS:
             raise ValueError(
-                "expected to see {objname} in NODETYPES".format(
+                "expected to see {objname} in ALL_NODETYPES".format(
                     objname=objname))
     except TypeError:
         pass
 
-
 def generate_valid_topsorted_nodetype_dags(
         start_types=UNIVERSALS,
         end_type=GameEffect,
-        predicate=lambda types: len(types) < 4):
+        predicate=lambda types: len(types) < 5):
     """Generator function that performs a bidirectional BFS, searching forward from InputType and backward from GameEffect.
     A given vertex in the search has two components
             * A set of "unused types" - corresponding to missing sinks if searching forward, sources if backward
@@ -367,13 +366,18 @@ def generate_valid_topsorted_nodetype_dags(
     forwardq = Queue()
     prefixcache = defaultdict(list)  # [Type] -> [[NodeType]]
     for subset in powerset(start_types):
+        # flatten available types
         a = [typ for n in subset for typ in n.OUTTYPES]
         forwardq.put((FrozenMultiset(a), tuple(subset)))
         prefixcache[FrozenMultiset(a)].append(subset)
     backwardq = Queue()
-    backwardq.put((FrozenMultiset([end_type]), ()))
+
     suffixcache = defaultdict(list)
-    suffixcache[FrozenMultiset([end_type])].append(())
+    n_endtypes = 2
+    for i in range(1, n_endtypes+1):
+        typeset = FrozenMultiset([end_type] * i)
+        backwardq.put((typeset, ()))
+        suffixcache[typeset].append(())
     # bias the search to prefer certain nodes
     # random.shuffle(nodetypes)
 
@@ -390,7 +394,7 @@ def generate_valid_topsorted_nodetype_dags(
             required_types = FrozenMultiset(nodetype.INTYPES)
             return required_types.issubset(available_types)
 
-        for nodetype in NODETYPES:
+        for nodetype in ALL_NODETYPES:
             if can_add_nodetype(nodetype):
                 new_args = (available_types - FrozenMultiset(nodetype.INTYPES)
                             ) + FrozenMultiset(nodetype.OUTTYPES)
@@ -412,7 +416,7 @@ def generate_valid_topsorted_nodetype_dags(
             output_types = FrozenMultiset(nodetype.OUTTYPES)
             return output_types.issubset(target_types)
 
-        for nodetype in NODETYPES:
+        for nodetype in ALL_NODETYPES:
             if can_add_nodetype(nodetype):
                 new_args = (target_types - FrozenMultiset(nodetype.OUTTYPES)
                             ) + FrozenMultiset(nodetype.INTYPES)
@@ -433,7 +437,6 @@ class PowerGraph(object):
     def __init__(self, nodes):
         self.nodes = nodes
 
-    @classmethod
     """
     Generate all PowerGraph objects from a list of nodetypes using different argument ordering choices
 
@@ -443,6 +446,7 @@ class PowerGraph(object):
     For example, if TypeA is a node from () => (float, float) and TypeB is a node from (float, float) => ()
     this function will yield both possible result graphs
     """
+    @classmethod
     def from_list_of_node_types(cls, nodetypes):
         def flatmap(f, l):
             return [j for i in l for j in f(i)]
