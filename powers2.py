@@ -375,6 +375,7 @@ class PowerGraph(object):
 
         def memoize(f):
             c = {}
+
             def g(x):
                 if x not in c:
                     c[x] = f(x)
@@ -384,7 +385,8 @@ class PowerGraph(object):
         @memoize
         def hash_arg(var):
             i = var.source.out.index(var)
-            return xxhash.xxh64(str(i) + str(hash_node(var.source))).intdigest()
+            return xxhash.xxh64(str(i) +
+                                str(hash_node(var.source))).intdigest()
 
         @memoize
         def hash_node(node):
@@ -397,7 +399,6 @@ class PowerGraph(object):
         for node in canonicalNodeOrder(self.nodes):
             xxh.update(str(hash_node(node)))
         return xxh.intdigest()
-
 
     """
     Generate all PowerGraph objects from a list of nodetypes using different argument ordering choices
@@ -482,11 +483,13 @@ def main():
             h = hash(pg)
             if h not in seen_graph_hashes:
                 seen_graph_hashes.add(h)
-                #pg.render_to_file(
+                # pg.render_to_file(
                 #    "out/power{0}.png".format(n_successful_generated))
                 n_successful_generated += 1
             n_attempted_generated += 1
-    print n_successful_generated, "/", n_attempted_generated, "unique outputs"
+    print """Generated {attempted} power graphs, {successful} unique
+Uniqueness rate: {ratio:.3%}""".format(attempted=n_attempted_generated, successful=n_successful_generated, ratio=n_successful_generated / float(n_attempted_generated))
+
     def must_contain_nodetype(nodetype):
         return lambda graph: any(isinstance(node, nodetype)
                                  for node in graph.nodes)
