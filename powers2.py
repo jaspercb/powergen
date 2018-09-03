@@ -1,9 +1,8 @@
 """
 DONE
     * Synthesize DAGs that represent abilities from a set of components
-    * Optimize graph generation to be less "generate a bunch, ignore the bad ones"
-    * Damage modifiers
-        * Lifesteal
+    * Graph generation is pretty well-optimized
+    * We canonically hash power graphs to ensure uniqueness
 TODO:
     * Investigate whether graph generation would be sped up by maintaining backtrack pointers (space efficiency?)
     * More payoffs
@@ -16,15 +15,18 @@ TODO:
         * Per node restrictions like
             * Unique in entire graph
             * Unique in any path
+        (right now we force single-uniqueness)
     * Cross-ability interaction
         * E.g. hitting chills enemies, hitting chilled enemies freezes them
         * Probably easier to build into palettes and damage types
         * Still need to theoretically support, though.
-    * Possibly use what I'm going to call "augments" - after generating simple
+    * Possibly use what I'm currently calling "augments" - after generating simple
       core graphs, add slightly complicating behavior that DOES NOT CHANGE the graph
         * This would also be a good way to add stuff like delays and damage modifiers
         * Also a good way to add cross-ability interaction
             * e.g. Condition x EntityId -> stronger condition output
+        * Damage modifiers
+            * Lifesteal
 
     * When generating ability node types, some orderings can be more "general" than others
         * E.g. Input -> Float,  () -> Float, Float -> Intermediate, Intermediate * Float -> Final
@@ -39,6 +41,7 @@ import os
 import logging
 import sys
 import itertools
+import xxhash
 from collections import namedtuple, defaultdict
 from Queue import Queue
 import networkx as nx
@@ -361,6 +364,36 @@ class PowerGraph(object):
     def __init__(self, nodes):
         self.nodes = nodes
 
+    def __hash__(self):
+        """
+        Returns a deterministic 64-bit hex value. Different PowerGraph objects
+        representing the same structure give the same hash
+        """
+
+        def canonicalNodeOrder(nodelist):
+            return sorted(nodelist, key=lambda node: node.__class__.__name__)
+
+        def memoize(f):
+            c = {}
+            def g(x):
+                if x not in c:
+                    c[x] = f(x)
+                return c[x]
+            return g
+
+        @memoize
+        def hashNode(node):
+            xxh = xxhash.xxh64(node.__class__.__name__)
+            for arg in node.args:
+                xxh.update(str(hashNode(arg.source)))
+            return xxh.intdigest()
+
+        xxh = xxhash.xxh64()
+        for node in canonicalNodeOrder(self.nodes):
+            xxh.update(str(hashNode(node)))
+        return xxh.intdigest()
+
+
     """
     Generate all PowerGraph objects from a list of nodetypes using different argument ordering choices
 
@@ -436,13 +469,19 @@ def main():
     LOGGER.setLevel(logging.INFO)
 
     generator = generate_valid_topsorted_nodetype_dags()
-    i = 0
+    seen_graph_hashes = set()
+    n_successful_generated = 0
+    n_attempted_generated = 0
     for nodetypeslist in generator:
         for pg in PowerGraph.from_list_of_node_types(nodetypeslist):
-            pg.render_to_file(
-                "out/power{0}.png".format(i))
-            i += 1
-
+            h = hash(pg)
+            if h not in seen_graph_hashes:
+                seen_graph_hashes.add(h)
+                #pg.render_to_file(
+                #    "out/power{0}.png".format(n_successful_generated))
+                n_successful_generated += 1
+            n_attempted_generated += 1
+    print n_successful_generated, "/", n_attempted_generated, "unique outputs"
     def must_contain_nodetype(nodetype):
         return lambda graph: any(isinstance(node, nodetype)
                                  for node in graph.nodes)
