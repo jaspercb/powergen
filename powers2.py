@@ -382,15 +382,20 @@ class PowerGraph(object):
             return g
 
         @memoize
-        def hashNode(node):
+        def hash_arg(var):
+            i = var.source.out.index(var)
+            return xxhash.xxh64(str(i) + str(hash_node(var.source))).intdigest()
+
+        @memoize
+        def hash_node(node):
             xxh = xxhash.xxh64(node.__class__.__name__)
             for arg in node.args:
-                xxh.update(str(hashNode(arg.source)))
+                xxh.update(str(hash_arg(arg)))
             return xxh.intdigest()
 
         xxh = xxhash.xxh64()
         for node in canonicalNodeOrder(self.nodes):
-            xxh.update(str(hashNode(node)))
+            xxh.update(str(hash_node(node)))
         return xxh.intdigest()
 
 
