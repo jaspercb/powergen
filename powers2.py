@@ -51,6 +51,18 @@ from multiset import FrozenMultiset
 
 # Config vars
 MAX_ENDTYPES = 2
+OUTPUT_IMAGES = False
+
+# UTILITIES
+
+def memoize(f):
+    c = {}
+
+    def g(x):
+        if x not in c:
+            c[x] = f(x)
+        return c[x]
+    return g
 
 
 def powerset(iterable):
@@ -372,16 +384,6 @@ class PowerGraph(object):
 
         def canonicalNodeOrder(nodelist):
             return sorted(nodelist, key=lambda node: node.__class__.__name__)
-
-        def memoize(f):
-            c = {}
-
-            def g(x):
-                if x not in c:
-                    c[x] = f(x)
-                return c[x]
-            return g
-
         @memoize
         def hash_arg(var):
             i = var.source.out.index(var)
@@ -483,8 +485,9 @@ def main():
             h = hash(pg)
             if h not in seen_graph_hashes:
                 seen_graph_hashes.add(h)
-                # pg.render_to_file(
-                #    "out/power{0}.png".format(n_successful_generated))
+                if OUTPUT_IMAGES:
+                    pg.render_to_file(
+                        "out/power{0}.png".format(n_successful_generated))
                 n_successful_generated += 1
             n_attempted_generated += 1
     print """Generated {attempted} power graphs, {successful} unique
