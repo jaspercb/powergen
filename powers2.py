@@ -42,6 +42,7 @@ import logging
 import sys
 import itertools
 import xxhash
+import random
 from collections import namedtuple, defaultdict
 from Queue import Queue
 import networkx as nx
@@ -50,9 +51,10 @@ from multiset import FrozenMultiset
 
 
 # Config vars
-MAX_ENDTYPES = 2
-OUTPUT_IMAGES = False
-MAX_INTERMEDIATE_UNBOUND_VARS = 2
+OUTPUT_IMAGES = True
+MAX_GAME_EFFECTS_PER_POWER = 2
+MAX_INTERMEDIATE_UNBOUND_VARS = 3
+N_POWERS_TO_GENERATE = 20
 
 # UTILITIES
 
@@ -149,24 +151,20 @@ def CreateNodeType(
                     "FORMATSTRINGS": formatstrings})
         yield typ
 
-
+# TODO: remove all no-sources, replace with something that ruins the DFS less
 UNIVERSALS = itertools.chain(
-    CreateNodeType(
-        "ConstantFloat",
-        intypes=[],
-        outtypes=[float],
-        formatstrings=["$CONSTANT"]),
     CreateNodeType(
         "OwningEntity",
         intypes=[],
         outtypes=[EntityId],
         formatstrings=["the user's character"]),
-    CreateNodeType(
+)
+
+InKey = list(CreateNodeType(
         "InKey",
         intypes=[],
         outtypes=[InputKey],
-        formatstrings=[""]),
-)
+        formatstrings=["{0}"]))[0]
 
 # INPUTS
 
@@ -253,6 +251,7 @@ ALL_NODETYPES = list(itertools.chain(
         formatstrings=["{0}"]),
 ))
 
+ALL_NODETYPES+= UNIVERSALS
 
 """
 class DelayArea(Node):
@@ -316,8 +315,38 @@ class PowerGraph(object):
     For example, if TypeA is a node from () => (float, float) and TypeB is a node from (float, float) => ()
     this function will yield both possible result graphs
     """
+
     @classmethod
     def from_list_of_node_types(cls, nodetypes):
+        def flatmap(f, l):
+            return [random.choice([j for i in l for j in f(i)])]
+
+        # nodes, unused vars
+        state = [(frozenset(), frozenset())]
+
+        for nodetype in nodetypes:
+            def add_nodetype(state, captured_nodetype=nodetype):
+                (nodes, unused_vars) = state
+                consumed_argsets = [((), unused_vars)]
+                for intype in captured_nodetype.INTYPES:
+                    def select_one_arg(state1, captured_intype=intype):
+                        (prev_used_vars, inner_unused_vars) = state1
+                        for var in inner_unused_vars:
+                            if var.type == captured_intype:
+                                yield (prev_used_vars + (var,), inner_unused_vars - frozenset([var]))
+
+                    consumed_argsets = flatmap(
+                        select_one_arg, consumed_argsets)
+                for (used_vars, inner_unused_vars) in consumed_argsets:
+                    node = captured_nodetype(*used_vars)
+                    yield (nodes | frozenset([node]), (inner_unused_vars | frozenset(node.out)))
+
+            state = flatmap(add_nodetype, state)
+
+        return (cls(nodes) for (nodes, _) in state)
+
+    @classmethod
+    def all_from_list_of_node_types(cls, nodetypes):
         def flatmap(f, l):
             return [j for i in l for j in f(i)]
 
@@ -382,126 +411,58 @@ class PowerGraphGenerator(object):
     def __init__(self):
         pass
 
-    def generate_valid_topsorted_nodetype_dags(
-            self,
-            start_types=UNIVERSALS,
-            end_type=GameEffect,
-            predicate=lambda types: len(types) <= MAX_INTERMEDIATE_UNBOUND_VARS):
-        """Generator function that performs a bidirectional BFS, searching forward from InputType and backward from GameEffect.
-        A given vertex in the search has two components
-                * A set of "unused types" - corresponding to missing sinks if searching forward, sources if backward
-                * The order in which we added edges - a prefix if searching forward, a suffix if searching backward
+    def generate_valid_topsorted_node_dag(
+        self,
+        start_type=InputKey,
+        end_type=GameEffect,
+        predicate=lambda types: len(types) <= MAX_INTERMEDIATE_UNBOUND_VARS):
+        goalstates = set()
+        for n in range(MAX_GAME_EFFECTS_PER_POWER):
+            goalstates.add(FrozenMultiset([end_type] * n))
 
-        TODO: optimization: since many nodes have the same type signature, we can generate templated outputs,
-              then replace templates with particular nodetypes with a matching type signature
-        """
-
-        previously_output = set()
-        forwardq = Queue()
-        prefixcache = defaultdict(list)  # [Type] -> [[NodeType]]
-        for subset in powerset(start_types):
-            # flatten available types
-            typeset = FrozenMultiset(
-                [typ for n in subset for typ in n.OUTTYPES])
-            forwardq.put((typeset, tuple(subset)))
-            prefixcache[typeset].append(subset)
-        backwardq = Queue()
-
-        suffixcache = defaultdict(list)
-        for i in range(1, MAX_ENDTYPES + 1):
-            typeset = FrozenMultiset([end_type] * i)
-            backwardq.put((typeset, ()))
-            suffixcache[typeset].append(())
-        # bias the search to prefer certain nodes
-        # random.shuffle(nodetypes)
-
-        def process_forwardq():
-            available_types, nodetypes_prefix = forwardq.get(block=False)
-            if available_types in suffixcache:
-                for nodetypes_suffix in suffixcache[available_types]:
-                    entire_nodetypes = tuple(
-                        nodetypes_prefix + nodetypes_suffix)
-                    if entire_nodetypes not in previously_output:
-                        previously_output.add(entire_nodetypes)
-                        yield entire_nodetypes
-
+        @memoize
+        def dfs(available_types):
+            """Returns a list of """
             def can_add_nodetype(nodetype):
                 required_types = FrozenMultiset(nodetype.INTYPES)
                 return required_types.issubset(available_types)
 
-            for nodetype in ALL_NODETYPES:
-                if can_add_nodetype(nodetype):
-                    new_args = (available_types - FrozenMultiset(nodetype.INTYPES)
+            possible_nodetypes = filter(can_add_nodetype, ALL_NODETYPES)
+            random.shuffle(possible_nodetypes)
+            for nodetype in possible_nodetypes:
+                new_available_types = (available_types - FrozenMultiset(nodetype.INTYPES)
                                 ) + FrozenMultiset(nodetype.OUTTYPES)
-                    new_nodetypes_prefix = nodetypes_prefix + (nodetype,)
-                    if predicate(new_args):
-                        forwardq.put((new_args, new_nodetypes_prefix))
-                        prefixcache[new_args].append(new_nodetypes_prefix)
+                if new_available_types in goalstates:
+                    return [nodetype]
+                elif predicate(new_available_types):
+                    suffix = dfs(new_available_types)
+                    if suffix:
+                        return [nodetype] + suffix
 
-        def process_backwardq():
-            target_types, nodetypes_suffix = backwardq.get(block=False)
-            if target_types in prefixcache:
-                for nodetypes_prefix in prefixcache[target_types]:
-                    entire_nodetypes = tuple(
-                        nodetypes_prefix + nodetypes_suffix)
-                    if entire_nodetypes not in previously_output:
-                        previously_output.add(entire_nodetypes)
-                        yield entire_nodetypes
+        return dfs(FrozenMultiset([start_type]))
 
-            def can_add_nodetype(nodetype):
-                output_types = FrozenMultiset(nodetype.OUTTYPES)
-                return output_types.issubset(target_types)
-
-            for nodetype in ALL_NODETYPES:
-                if can_add_nodetype(nodetype):
-                    new_args = (target_types - FrozenMultiset(nodetype.OUTTYPES)
-                                ) + FrozenMultiset(nodetype.INTYPES)
-                    new_nodetypes_suffix = (nodetype,) + nodetypes_suffix
-                    if predicate(new_args):
-                        backwardq.put((new_args, new_nodetypes_suffix))
-                        suffixcache[new_args].append(new_nodetypes_suffix)
-        while forwardq.qsize() or backwardq.qsize():
-            if forwardq.qsize():
-                for out in process_forwardq():
-                    yield out
-            if backwardq.qsize():
-                for out in process_backwardq():
-                    yield out
-
-    def generate(self):
-        generator = self.generate_valid_topsorted_nodetype_dags()
+    def generate_unique(self, n_unique):
         seen_graph_hashes = set()
-        self.n_successful_generated = 0
-        self.n_attempted_generated = 0
-        for nodetypeslist in generator:
+        n_output = 0
+        while n_output < n_unique:
+            nodetypeslist = [InKey] + self.generate_valid_topsorted_node_dag()
             for pg in PowerGraph.from_list_of_node_types(nodetypeslist):
                 h = hash(pg)
                 if h not in seen_graph_hashes:
                     seen_graph_hashes.add(h)
                     yield pg
-                    self.n_successful_generated += 1
-                self.n_attempted_generated += 1
-
-    def infostring(self):
-        attempted = self.n_attempted_generated
-        successes = self.n_successful_generated
-        return """Generated {attempted} power graphs, {successful} unique
-Uniqueness rate: {ratio:.3%}""".format(attempted=attempted, successful=successes, ratio=successes / float(attempted))
+                    n_output += 1
 
 
 def main():
     LOGGER.setLevel(logging.INFO)
     generator = PowerGraphGenerator()
-    for powergraph in generator.generate():
+    n_successful_generated = 0
+    for powergraph in generator.generate_unique(N_POWERS_TO_GENERATE):
         if OUTPUT_IMAGES:
-            pg.render_to_file(
+            powergraph.render_to_file(
                 "out/power{0}.png".format(n_successful_generated))
-
-    print generator.infostring()
-
-    def must_contain_nodetype(nodetype):
-        return lambda graph: any(isinstance(node, nodetype)
-                                 for node in graph.nodes)
+            n_successful_generated += 1
 
 
 if __name__ == "__main__":
