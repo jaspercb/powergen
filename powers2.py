@@ -251,8 +251,6 @@ ALL_NODETYPES = list(itertools.chain(
         formatstrings=["{0}"]),
 ))
 
-ALL_NODETYPES+= UNIVERSALS
-
 """
 class DelayArea(Node):
     INTYPES = [Area]
@@ -454,10 +452,39 @@ class PowerGraphGenerator(object):
                     n_output += 1
 
 
+def renderAllNodetypes(filename):
+    digraph = nx.MultiDiGraph()
+    label_from_node = {}
+    counter = defaultdict(int)
+
+    def typenodename(typ):
+        counter[typ] += 1
+        return typ.__name__ + str(counter[typ])
+
+    for nodetype in ALL_NODETYPES:
+        name = nodetype.__name__
+        digraph.add_node(name)
+
+        for intype in nodetype.INTYPES:
+            digraph.add_edge(typenodename(intype), name)
+        for outtype in nodetype.OUTTYPES:
+            digraph.add_edge(name, typenodename(outtype))
+
+    LOGGER.info("Writing to %s", filename)
+    write_dot(digraph, 'multi.dot')
+
+    os.system(
+        """C:/"Program Files (x86)"/Graphviz2.38/bin/dot.exe -Nshape=box -T png multi.dot > {0}""".format(filename))
+    os.remove("multi.dot")
+
+
+
+
 def main():
     LOGGER.setLevel(logging.INFO)
     generator = PowerGraphGenerator()
     n_successful_generated = 0
+    renderAllNodetypes("out/all_nodetypes.png")
     for powergraph in generator.generate_unique(N_POWERS_TO_GENERATE):
         if OUTPUT_IMAGES:
             powergraph.render_to_file(
