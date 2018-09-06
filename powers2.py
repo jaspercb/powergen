@@ -4,11 +4,17 @@ DONE
     * Graph generation is pretty well-optimized
     * We canonically hash power graphs to ensure uniqueness
 TODO:
-    * Investigate whether graph generation would be sped up by maintaining backtrack pointers (space efficiency?)
+    * More sources
+        * All enemies
+    * More combinators
+        * Path boomerang (augment?)
+        * Direction to path
+        * Seeking projectile (augment?)
     * More payoffs
         * Displaces (pull, push)
-        * %life damage
+        * %life damage (augment?)
         * More status effects
+        * Visibility
     * Generate consistent sets of abilities
         * Elemental palettes
     * Restrictions on output graphs
@@ -19,7 +25,8 @@ TODO:
     * Cross-ability interaction
         * E.g. hitting chills enemies, hitting chilled enemies freezes them
         * Probably easier to build into palettes and damage types
-        * Still need to theoretically support, though.
+        * Still need to theoretically support, though
+    * Complexity metric?
     * Possibly use what I'm currently calling "augments" - after generating simple
       core graphs, add slightly complicating behavior that DOES NOT CHANGE the graph
         * This would also be a good way to add stuff like delays and damage modifiers
@@ -27,13 +34,8 @@ TODO:
             * e.g. Condition x EntityId -> stronger condition output
         * Damage modifiers
             * Lifesteal
-
-    * When generating ability node types, some orderings can be more "general" than others
-        * E.g. Input -> Float,  () -> Float, Float -> Intermediate, Intermediate * Float -> Final
-            * If we add () -> Float after Float -> Intermediate there are ungenerateable combinations
-            * To fix, we add a restriction to "can we add this node"
-                * If a previous node has consumed an X, we can't add a node that produces an X
-                  unless it could plausibly depend somehow on that previous node
+            * Increased-damage-if-previously-hit
+            * True damage
 """
 
 
@@ -135,7 +137,7 @@ class Node(object):
         return [var.description for var in self.out]
 
 
-def CreateNodeType(
+def create_node_type(
         nodename,
         intypes,
         outtypes,
@@ -153,14 +155,14 @@ def CreateNodeType(
 
 # TODO: remove all no-sources, replace with something that ruins the DFS less
 UNIVERSALS = itertools.chain(
-    CreateNodeType(
+    create_node_type(
         "OwningEntity",
         intypes=[],
         outtypes=[EntityId],
         formatstrings=["the user's character"]),
 )
 
-InKey = list(CreateNodeType(
+InKey = list(create_node_type(
         "InKey",
         intypes=[],
         outtypes=[InputKey],
@@ -170,61 +172,61 @@ InKey = list(CreateNodeType(
 
 
 ALL_NODETYPES = list(itertools.chain(
-    CreateNodeType("InputClickPosition", intypes=[InputKey], outtypes=[
+    create_node_type("InputClickPosition", intypes=[InputKey], outtypes=[
                    Position], formatstrings=["where the user clicked"]),
-    CreateNodeType(
+    create_node_type(
         "InputClickDirection",
         intypes=[InputKey],
         outtypes=[Direction],
         formatstrings=["the direction of the user's click"]),
-    CreateNodeType(
+    create_node_type(
         "InputPerpendicularLine",
         intypes=[InputKey],
         outtypes=[
             SimplePath],
         formatstrings=["a line perpendicular to the player"]),
-    CreateNodeType("InputClickDragReleaseDirection", intypes=[InputKey], outtypes=[Position, Direction], formatstrings=[
+    create_node_type("InputClickDragReleaseDirection", intypes=[InputKey], outtypes=[Position, Direction], formatstrings=[
         "where the user clicked",
         "where the mouse moved before releasing"]),
-    CreateNodeType("InputClickCharge", intypes=[InputKey], outtypes=[Position, float], formatstrings=[
+    create_node_type("InputClickCharge", intypes=[InputKey], outtypes=[Position, float], formatstrings=[
         "where the user clicked and held",
         "proportional to how long the user held the mouse for"]),
-    CreateNodeType("InputPlaceMines", intypes=[InputKey], outtypes=[Position, float], formatstrings=[
+    create_node_type("InputPlaceMines", intypes=[InputKey], outtypes=[Position, float], formatstrings=[
         "where the mines were placed",
         "proportional to how long the mines charged before detonation"]),
-    CreateNodeType("InputUnitTargetEnemy", intypes=[InputKey], outtypes=[EnemyEntityId], formatstrings=[
+    create_node_type("InputUnitTargetEnemy", intypes=[InputKey], outtypes=[EnemyEntityId], formatstrings=[
         "the clicked enemy",
     ]),
-    CreateNodeType(
+    create_node_type(
         "InputUnitTargetEnemy",
         intypes=[InputKey],
         outtypes=[Bool],
         formatstrings=["a toggle is held"]),
     # Converters
-    CreateNodeType("PositionToArea", intypes=[Position], optionalintypes=[float], outtypes=[
+    create_node_type("PositionToArea", intypes=[Position], optionalintypes=[float], outtypes=[
                    Area], formatstrings=["a circle centered on {0} with radius {1}"]),
-    CreateNodeType("TimeBoolToRandomDirection", intypes=[Bool], outtypes=[
+    create_node_type("TimeBoolToRandomDirection", intypes=[Bool], outtypes=[
                    Direction], formatstrings=["random directions when {0}"]),
-    CreateNodeType(
+    create_node_type(
         "PositionFromEntity",
         intypes=[EntityId],
         outtypes=[Position],
         formatstrings=["the position of {0}"]),
-    CreateNodeType(
+    create_node_type(
         "EntitiesInArea",
         intypes=[Area],
         outtypes=[EnemyEntityId],
         formatstrings=["enemy entities in {0}"]),
-    CreateNodeType(
+    create_node_type(
         "DirectionToProjectile",
         intypes=[Direction],
         outtypes=[EnemyEntityId],
         formatstrings=["enemies hit by projectiles emitted towards {0}"]),
-    CreateNodeType("CloudFollowingPath", intypes=[SimplePath], outtypes=[
+    create_node_type("CloudFollowingPath", intypes=[SimplePath], outtypes=[
                    Area], formatstrings=["a cloud that moves along {0}"]),
-    CreateNodeType("PathToArea", intypes=[SimplePath], outtypes=[
+    create_node_type("PathToArea", intypes=[SimplePath], outtypes=[
                    Area], formatstrings=["a static cloud covering {0}"]),
-    CreateNodeType(
+    create_node_type(
         "PositionDirectionFloatToArea",
         intypes=[
             Position,
@@ -233,18 +235,18 @@ ALL_NODETYPES = list(itertools.chain(
         outtypes=[Area],
         formatstrings=["a rectangle starting at {0}, moving towards {1}, of length {2}"]),
     # GameEffects
-    CreateNodeType("AddDamageOnEntity", intypes=[EnemyEntityId], optionalintypes=[float], outtypes=[
+    create_node_type("AddDamageOnEntity", intypes=[EnemyEntityId], optionalintypes=[float], outtypes=[
                    Damage], formatstrings=["Deal damage scaling with {1} to {0}"]),
-    CreateNodeType("ConditionOnEntity", intypes=[EnemyEntityId], optionalintypes=[float], outtypes=[
+    create_node_type("ConditionOnEntity", intypes=[EnemyEntityId], optionalintypes=[float], outtypes=[
                    GameEffect], formatstrings=["Inflict a condition on {0} with intensity {1}"]),
-    CreateNodeType("TeleportPlayer", intypes=[EntityId, Position], outtypes=[
+    create_node_type("TeleportPlayer", intypes=[EntityId, Position], outtypes=[
                    GameEffect], formatstrings=["Teleports {0} to {1}"]),
-    CreateNodeType(
+    create_node_type(
         "Wall",
         intypes=[SimplePath],
         outtypes=[GameEffect],
         formatstrings=["A wall following {0}"]),
-    CreateNodeType(
+    create_node_type(
         "TerminateDamage",
         intypes=[Damage],
         outtypes=[GameEffect],
@@ -283,7 +285,7 @@ class PowerGraph(object):
         representing the same structure give the same hash
         """
 
-        def canonicalNodeOrder(nodelist):
+        def canonical_node_order(nodelist):
             return sorted(nodelist, key=lambda node: node.__class__.__name__)
 
         @memoize
@@ -300,7 +302,7 @@ class PowerGraph(object):
             return xxh.intdigest()
 
         xxh = xxhash.xxh64()
-        for node in canonicalNodeOrder(self.nodes):
+        for node in canonical_node_order(self.nodes):
             xxh.update(str(hash_node(node)))
         return xxh.intdigest()
 
