@@ -172,8 +172,11 @@ InKey = list(create_node_type(
 
 
 ALL_NODETYPES = list(itertools.chain(
-    create_node_type("InputClickPosition", intypes=[InputKey], outtypes=[
-                   Position], formatstrings=["where the user clicked"]),
+    create_node_type(
+        "InputClickPosition",
+        intypes=[InputKey],
+        outtypes=[Position],
+        formatstrings=["where the user clicked"]),
     create_node_type(
         "InputClickDirection",
         intypes=[InputKey],
@@ -185,17 +188,32 @@ ALL_NODETYPES = list(itertools.chain(
         outtypes=[
             SimplePath],
         formatstrings=["a line perpendicular to the player"]),
-    create_node_type("InputClickDragReleaseDirection", intypes=[InputKey], outtypes=[Position, Direction], formatstrings=[
-        "where the user clicked",
-        "where the mouse moved before releasing"]),
-    create_node_type("InputClickCharge", intypes=[InputKey], outtypes=[Position, float], formatstrings=[
-        "where the user clicked and held",
-        "proportional to how long the user held the mouse for"]),
-    create_node_type("InputPlaceMines", intypes=[InputKey], outtypes=[Position, float], formatstrings=[
-        "where the mines were placed",
-        "proportional to how long the mines charged before detonation"]),
-    create_node_type("InputUnitTargetEnemy", intypes=[InputKey], outtypes=[EnemyEntityId], formatstrings=[
-        "the clicked enemy",
+    create_node_type(
+        "InputClickDragReleaseDirection",
+        intypes=[InputKey],
+        outtypes=[Position, Direction],
+        formatstrings=[
+            "where the user clicked",
+            "where the mouse moved before releasing"]),
+    create_node_type(
+        "InputClickCharge",
+        intypes=[InputKey],
+        outtypes=[Position, float],
+        formatstrings=[
+            "where the user clicked and held",
+            "proportional to how long the user held the mouse for"]),
+    create_node_type(
+        "InputPlaceMines",
+        intypes=[InputKey],
+        outtypes=[Position, float],
+        formatstrings=[
+            "where the mines were placed",
+            "proportional to how long the mines charged before detonation"]),
+    create_node_type(
+        "InputUnitTargetEnemy",
+        intypes=[InputKey],
+        outtypes=[EnemyEntityId],
+        formatstrings=["the clicked enemy",
     ]),
     create_node_type(
         "InputUnitTargetEnemy",
@@ -203,10 +221,17 @@ ALL_NODETYPES = list(itertools.chain(
         outtypes=[Bool],
         formatstrings=["a toggle is held"]),
     # Converters
-    create_node_type("PositionToArea", intypes=[Position], optionalintypes=[float], outtypes=[
-                   Area], formatstrings=["a circle centered on {0} with radius {1}"]),
-    create_node_type("TimeBoolToRandomDirection", intypes=[Bool], outtypes=[
-                   Direction], formatstrings=["random directions when {0}"]),
+    create_node_type(
+        "PositionToArea",
+        intypes=[Position],
+        optionalintypes=[float],
+        outtypes=[Area],
+        formatstrings=["a circle centered on {0} with radius {1}"]),
+    create_node_type(
+        "TimeBoolToRandomDirection",
+        intypes=[Bool],
+        outtypes=[Direction],
+        formatstrings=["random directions when {0}"]),
     create_node_type(
         "PositionFromEntity",
         intypes=[EntityId],
@@ -222,10 +247,16 @@ ALL_NODETYPES = list(itertools.chain(
         intypes=[Direction],
         outtypes=[EnemyEntityId],
         formatstrings=["enemies hit by projectiles emitted towards {0}"]),
-    create_node_type("CloudFollowingPath", intypes=[SimplePath], outtypes=[
-                   Area], formatstrings=["a cloud that moves along {0}"]),
-    create_node_type("PathToArea", intypes=[SimplePath], outtypes=[
-                   Area], formatstrings=["a static cloud covering {0}"]),
+    create_node_type(
+        "CloudFollowingPath",
+        intypes=[SimplePath],
+        outtypes=[Area],
+        formatstrings=["a cloud that moves along {0}"]),
+    create_node_type(
+        "PathToArea",
+        intypes=[SimplePath],
+        outtypes=[Area],
+        formatstrings=["a static cloud covering {0}"]),
     create_node_type(
         "PositionDirectionFloatToArea",
         intypes=[
@@ -235,12 +266,23 @@ ALL_NODETYPES = list(itertools.chain(
         outtypes=[Area],
         formatstrings=["a rectangle starting at {0}, moving towards {1}, of length {2}"]),
     # GameEffects
-    create_node_type("AddDamageOnEntity", intypes=[EnemyEntityId], optionalintypes=[float], outtypes=[
-                   Damage], formatstrings=["Deal damage scaling with {1} to {0}"]),
-    create_node_type("ConditionOnEntity", intypes=[EnemyEntityId], optionalintypes=[float], outtypes=[
-                   GameEffect], formatstrings=["Inflict a condition on {0} with intensity {1}"]),
-    create_node_type("TeleportPlayer", intypes=[EntityId, Position], outtypes=[
-                   GameEffect], formatstrings=["Teleports {0} to {1}"]),
+    create_node_type(
+        "AddDamageOnEntity",
+        intypes=[EnemyEntityId],
+        optionalintypes=[float],
+        outtypes=[Damage],
+        formatstrings=["Deal damage scaling with {1} to {0}"]),
+    create_node_type(
+        "ConditionOnEntity",
+        intypes=[EnemyEntityId],
+        optionalintypes=[float],
+        outtypes=[GameEffect],
+        formatstrings=["Inflict a condition on {0} with intensity {1}"]),
+    create_node_type(
+        "TeleportPlayer",
+        intypes=[EntityId, Position],
+        outtypes=[GameEffect],
+        formatstrings=["Teleports {0} to {1}"]),
     create_node_type(
         "Wall",
         intypes=[SimplePath],
@@ -347,8 +389,8 @@ class PowerGraph(object):
 
     @classmethod
     def all_from_list_of_node_types(cls, nodetypes):
-        def flatmap(f, l):
-            return [j for i in l for j in f(i)]
+        def flatmap(func, seq):
+            return [j for i in seq for j in func(i)]
 
         # nodes, unused vars
         state = [(frozenset(), frozenset())]
@@ -412,10 +454,10 @@ class PowerGraphGenerator(object):
         pass
 
     def generate_valid_topsorted_node_dag(
-        self,
-        start_type=InputKey,
-        end_type=GameEffect,
-        predicate=lambda types: len(types) <= MAX_INTERMEDIATE_UNBOUND_VARS):
+            self,
+            start_type=InputKey,
+            end_type=GameEffect,
+            predicate=lambda types: len(types) <= MAX_INTERMEDIATE_UNBOUND_VARS):
         goalstates = set()
         for n in range(MAX_GAME_EFFECTS_PER_POWER):
             goalstates.add(FrozenMultiset([end_type] * n))
@@ -431,7 +473,7 @@ class PowerGraphGenerator(object):
             random.shuffle(possible_nodetypes)
             for nodetype in possible_nodetypes:
                 new_available_types = (available_types - FrozenMultiset(nodetype.INTYPES)
-                                ) + FrozenMultiset(nodetype.OUTTYPES)
+                                       ) + FrozenMultiset(nodetype.OUTTYPES)
                 if new_available_types in goalstates:
                     return [nodetype]
                 elif predicate(new_available_types):
@@ -446,17 +488,16 @@ class PowerGraphGenerator(object):
         n_output = 0
         while n_output < n_unique:
             nodetypeslist = [InKey] + self.generate_valid_topsorted_node_dag()
-            for pg in PowerGraph.from_list_of_node_types(nodetypeslist):
-                h = hash(pg)
-                if h not in seen_graph_hashes:
-                    seen_graph_hashes.add(h)
-                    yield pg
+            for powergraph in PowerGraph.from_list_of_node_types(nodetypeslist):
+                graphhash = hash(powergraph)
+                if graphhash not in seen_graph_hashes:
+                    seen_graph_hashes.add(graphhash)
+                    yield powergraph
                     n_output += 1
 
 
-def renderAllNodetypes(filename):
+def render_all_nodetypes(filename):
     digraph = nx.MultiDiGraph()
-    label_from_node = {}
     counter = defaultdict(int)
 
     def typenodename(typ):
@@ -480,13 +521,11 @@ def renderAllNodetypes(filename):
     os.remove("multi.dot")
 
 
-
-
 def main():
     LOGGER.setLevel(logging.INFO)
     generator = PowerGraphGenerator()
     n_successful_generated = 0
-    renderAllNodetypes("out/all_nodetypes.png")
+    render_all_nodetypes("out/all_nodetypes.png")
     for powergraph in generator.generate_unique(N_POWERS_TO_GENERATE):
         if OUTPUT_IMAGES:
             powergraph.render_to_file(
