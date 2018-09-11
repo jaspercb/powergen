@@ -166,17 +166,22 @@ InKey = list(create_node_type(
         "InKey",
         intypes=[],
         outtypes=[InputKey],
-        formatstrings=["{0}"]))[0]
+        formatstrings=[""]))[0]
 
 # INPUTS
 
 
 ALL_NODETYPES = list(itertools.chain(
     create_node_type(
+        "InputClickRepeat",
+        intypes=[InputKey],
+        outtypes=[InputKey, InputKey],
+        formatstrings=["", ""]),
+    create_node_type(
         "InputClickPosition",
         intypes=[InputKey],
         outtypes=[Position],
-        formatstrings=["where the user clicked"]),
+        formatstrings=[""]),
     create_node_type(
         "InputClickDirection",
         intypes=[InputKey],
@@ -216,7 +221,7 @@ ALL_NODETYPES = list(itertools.chain(
         formatstrings=["the clicked enemy",
     ]),
     create_node_type(
-        "InputUnitTargetEnemy",
+        "InputToggle",
         intypes=[InputKey],
         outtypes=[Bool],
         formatstrings=["a toggle is held"]),
@@ -228,7 +233,7 @@ ALL_NODETYPES = list(itertools.chain(
         outtypes=[Area],
         formatstrings=["a circle centered on {0} with radius {1}"]),
     create_node_type(
-        "TimeBoolToRandomDirection",
+        "EmitRandomDirections",
         intypes=[Bool],
         outtypes=[Direction],
         formatstrings=["random directions when {0}"]),
@@ -253,18 +258,20 @@ ALL_NODETYPES = list(itertools.chain(
         outtypes=[Area],
         formatstrings=["a cloud that moves along {0}"]),
     create_node_type(
+        "PulseAlongPath",
+        intypes=[SimplePath],
+        outtypes=[Position],
+        formatstrings=["points along {0}"]),
+    create_node_type(
         "PathToArea",
         intypes=[SimplePath],
         outtypes=[Area],
         formatstrings=["a static cloud covering {0}"]),
     create_node_type(
-        "PositionDirectionFloatToArea",
-        intypes=[
-            Position,
-            Direction,
-            float],
-        outtypes=[Area],
-        formatstrings=["a rectangle starting at {0}, moving towards {1}, of length {2}"]),
+        "Accumulator",
+        intypes=[Position, InKey],
+        outtypes=[Position],
+        formatstrings=["Stores a sequence of positions for simultaneous firing {0}"]),
     # GameEffects
     create_node_type(
         "AddDamageOnEntity",
@@ -509,9 +516,13 @@ def render_all_nodetypes(filename):
         digraph.add_node(name)
 
         for intype in nodetype.INTYPES:
-            digraph.add_edge(typenodename(intype), name)
+            typename = typenodename(intype)
+            digraph.add_node(typename, label=intype.__name__)
+            digraph.add_edge(typename, name)
         for outtype in nodetype.OUTTYPES:
-            digraph.add_edge(name, typenodename(outtype))
+            typename = typenodename(outtype)
+            digraph.add_node(typename, label=outtype.__name__)
+            digraph.add_edge(name, typename)
 
     LOGGER.info("Writing to %s", filename)
     write_dot(digraph, 'multi.dot')
