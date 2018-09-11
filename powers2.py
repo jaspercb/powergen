@@ -54,8 +54,8 @@ from multiset import FrozenMultiset
 
 # Config vars
 OUTPUT_IMAGES = True
-MAX_GAME_EFFECTS_PER_POWER = 2
-MAX_INTERMEDIATE_UNBOUND_VARS = 3
+MAX_GAME_EFFECTS_PER_POWER = 3
+MAX_INTERMEDIATE_UNBOUND_VARS = 4
 N_POWERS_TO_GENERATE = 20
 
 # UTILITIES
@@ -144,13 +144,14 @@ def create_node_type(
         formatstrings,
         optionalintypes=[]):
     for i, opttypesubset in enumerate(powerset(optionalintypes)):
-        actualnodename = nodename + str(i)
+        actualnodename = nodename + (str(i) if optionalintypes else "")
         typ = type(actualnodename,
                    (Node,
                     ),
                    {"INTYPES": tuple(intypes) + opttypesubset,
                     "OUTTYPES": tuple(outtypes),
                     "FORMATSTRINGS": formatstrings})
+        globals()[actualnodename] = typ
         yield typ
 
 # TODO: remove all no-sources, replace with something that ruins the DFS less
@@ -490,17 +491,18 @@ class PowerGraphGenerator(object):
 
         return dfs(FrozenMultiset([start_type]))
 
-    def generate_unique(self, n_unique):
+    def generate_unique(self, n_unique=20, predicate=lambda pg: True):
         seen_graph_hashes = set()
         n_output = 0
         while n_output < n_unique:
             nodetypeslist = [InKey] + self.generate_valid_topsorted_node_dag()
             for powergraph in PowerGraph.from_list_of_node_types(nodetypeslist):
-                graphhash = hash(powergraph)
-                if graphhash not in seen_graph_hashes:
-                    seen_graph_hashes.add(graphhash)
-                    yield powergraph
-                    n_output += 1
+                if predicate(powergraph):
+                    graphhash = hash(powergraph)
+                    if graphhash not in seen_graph_hashes:
+                        seen_graph_hashes.add(graphhash)
+                        yield powergraph
+                        n_output += 1
 
 
 def render_all_nodetypes(filename):
@@ -533,6 +535,11 @@ def render_all_nodetypes(filename):
 
 
 def main():
+    def pg_contains_node(nodetype):
+        def f(pg):
+            return any(node.__class__ == nodetype for node in pg.nodes)
+        return f
+
     LOGGER.setLevel(logging.INFO)
     generator = PowerGraphGenerator()
     n_successful_generated = 0
