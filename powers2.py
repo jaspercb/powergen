@@ -209,13 +209,6 @@ ALL_NODETYPES = list(itertools.chain(
             "where the user clicked",
             "where the mouse moved before releasing"]),
     create_node_type(
-        "InputClickCharge",
-        intypes=[InputKey],
-        outtypes=[Position, float],
-        formatstrings=[
-            "where the user clicked and held",
-            "proportional to how long the user held the mouse for"]),
-    create_node_type(
         "InputUnitTargetEnemy",
         intypes=[InputKey],
         outtypes=[EnemyEntityId],
