@@ -91,7 +91,7 @@ class TypedValue(object):
         return 'TypedValue(type={0}, value={1})'.format(
             self.type, self.description)
 
-
+PossiblyRepeatedInputKey = namedtuple("PossiblyRepeatedInputKey", "null")
 InputKey = namedtuple("InputKey", "null")
 Position = namedtuple("Position", "x y")
 SimplePath = namedtuple("SimplePath", "points")
@@ -99,6 +99,7 @@ Direction = namedtuple("Direction", "dx dy")
 EntityId = namedtuple("EntityId", "null")
 EnemyEntityId = namedtuple("EnemyEntityId", "null")
 Damage = namedtuple("Damage", "quant")
+Condition = namedtuple("Condition", "null")
 GameEffect = namedtuple("GameEffect", "null")
 Area = type("Area", (), {})
 Bool = type("Bool", (), {})
@@ -150,7 +151,8 @@ def create_node_type(
                     ),
                    {"INTYPES": tuple(intypes) + opttypesubset,
                     "OUTTYPES": tuple(outtypes),
-                    "FORMATSTRINGS": formatstrings})
+                    "FORMATSTRINGS": formatstrings,
+                    })
         globals()[actualnodename] = typ
         yield typ
 
@@ -166,7 +168,7 @@ UNIVERSALS = itertools.chain(
 InKey = list(create_node_type(
         "InKey",
         intypes=[],
-        outtypes=[InputKey],
+        outtypes=[PossiblyRepeatedInputKey],
         formatstrings=[""]))[0]
 
 # INPUTS
@@ -174,10 +176,15 @@ InKey = list(create_node_type(
 
 ALL_NODETYPES = list(itertools.chain(
     create_node_type(
-        "InputClickRepeat",
-        intypes=[InputKey],
+        "RepeatInputKey",
+        intypes=[PossiblyRepeatedInputKey],
         outtypes=[InputKey, InputKey],
-        formatstrings=["", ""]),
+        formatstrings=[""]),
+    create_node_type(
+        "SingleInputKey",
+        intypes=[PossiblyRepeatedInputKey],
+        outtypes=[InputKey],
+        formatstrings=[""]),
     create_node_type(
         "InputClickPosition",
         intypes=[InputKey],
@@ -209,13 +216,6 @@ ALL_NODETYPES = list(itertools.chain(
             "where the user clicked and held",
             "proportional to how long the user held the mouse for"]),
     create_node_type(
-        "InputPlaceMines",
-        intypes=[InputKey],
-        outtypes=[Position, float],
-        formatstrings=[
-            "where the mines were placed",
-            "proportional to how long the mines charged before detonation"]),
-    create_node_type(
         "InputUnitTargetEnemy",
         intypes=[InputKey],
         outtypes=[EnemyEntityId],
@@ -223,12 +223,12 @@ ALL_NODETYPES = list(itertools.chain(
     ]),
     create_node_type(
         "InputToggle",
-        intypes=[InputKey],
+        intypes=[PossiblyRepeatedInputKey], # don't want a one-two punch that uses a toggle
         outtypes=[Bool],
         formatstrings=["a toggle is held"]),
     # Converters
     create_node_type(
-        "PositionToArea",
+        "CircleAroundPoint",
         intypes=[Position],
         optionalintypes=[float],
         outtypes=[Area],
@@ -249,10 +249,15 @@ ALL_NODETYPES = list(itertools.chain(
         outtypes=[EnemyEntityId],
         formatstrings=["enemy entities in {0}"]),
     create_node_type(
-        "DirectionToProjectile",
-        intypes=[Direction],
+        "DirectionToSimplePath",
+        intypes=[Position, Direction],
+        outtypes=[SimplePath],
+        formatstrings=["towards {0}"]),
+    create_node_type(
+        "PathToProjectile",
+        intypes=[SimplePath],
         outtypes=[EnemyEntityId],
-        formatstrings=["enemies hit by projectiles emitted towards {0}"]),
+        formatstrings=["enemies hit by projectiles emitted {0}"]),
     create_node_type(
         "CloudFollowingPath",
         intypes=[SimplePath],
@@ -284,7 +289,7 @@ ALL_NODETYPES = list(itertools.chain(
         "ConditionOnEntity",
         intypes=[EnemyEntityId],
         optionalintypes=[float],
-        outtypes=[GameEffect],
+        outtypes=[Condition],
         formatstrings=["Inflict a condition on {0} with intensity {1}"]),
     create_node_type(
         "TeleportPlayer",
@@ -299,6 +304,11 @@ ALL_NODETYPES = list(itertools.chain(
     create_node_type(
         "TerminateDamage",
         intypes=[Damage],
+        outtypes=[GameEffect],
+        formatstrings=["{0}"]),
+    create_node_type(
+        "TerminateCondition",
+        intypes=[Condition],
         outtypes=[GameEffect],
         formatstrings=["{0}"]),
 ))
@@ -463,7 +473,7 @@ class PowerGraphGenerator(object):
 
     def generate_valid_topsorted_node_dag(
             self,
-            start_type=InputKey,
+            start_type=PossiblyRepeatedInputKey,
             end_type=GameEffect,
             predicate=lambda types: len(types) <= MAX_INTERMEDIATE_UNBOUND_VARS):
         goalstates = set()
