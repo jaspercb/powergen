@@ -98,6 +98,7 @@ SimplePath = namedtuple("SimplePath", "points")
 Direction = namedtuple("Direction", "dx dy")
 EntityId = namedtuple("EntityId", "null")
 EnemyEntityId = namedtuple("EnemyEntityId", "null")
+Projectile = namedtuple("Projectile", "null")
 Damage = namedtuple("Damage", "quant")
 Condition = namedtuple("Condition", "null")
 GameEffect = namedtuple("GameEffect", "null")
@@ -220,6 +221,32 @@ ALL_NODETYPES = list(itertools.chain(
         outtypes=[Bool],
         formatstrings=["a toggle is held"]),
     # Converters
+# Currently disabled because it forms an infinite loop
+    #create_node_type(
+    #    "HomingProjectileEntity",
+    #    intypes=[EnemyEntityId],
+    #    outtypes=[Projectile],
+    #    formatstrings=["a projectile that homes towards {0}"]),
+    create_node_type(
+        "DumbProjectile",
+        intypes=[SimplePath],
+        outtypes=[Projectile],
+        formatstrings=["a projectile that travels along {0}"]),
+    create_node_type(
+        "ProjectilePassthrough",
+        intypes=[Projectile],
+        outtypes=[EnemyEntityId],
+        formatstrings=["all enemies hit by {0}"]),
+    create_node_type(
+        "ProjectileCollideFirst",
+        intypes=[Projectile],
+        outtypes=[EnemyEntityId],
+        formatstrings=["the first enemy hit by {0}"]),
+    create_node_type(
+        "ProjectileCollideFirstTwo",
+        intypes=[Projectile],
+        outtypes=[EnemyEntityId],
+        formatstrings=["the first two enemies hit by {0}"]),
     create_node_type(
         "CircleAroundPoint",
         intypes=[Position],
@@ -456,7 +483,7 @@ class PowerGraph(object):
         write_dot(digraph, 'multi.dot')
 
         os.system(
-            """C:/"Program Files (x86)"/Graphviz2.38/bin/dot.exe -Nshape=box -T png multi.dot > {0}""".format(filename))
+            """dot -Nshape=box -T png multi.dot > {0}""".format(filename))
         os.remove("multi.dot")
 
 
@@ -533,7 +560,7 @@ def render_all_nodetypes(filename):
     write_dot(digraph, 'multi.dot')
 
     os.system(
-        """C:/"Program Files (x86)"/Graphviz2.38/bin/dot.exe -Nshape=box -T png multi.dot > {0}""".format(filename))
+        """dot -Nshape=box -T png multi.dot > {0}""".format(filename))
     os.remove("multi.dot")
 
 
